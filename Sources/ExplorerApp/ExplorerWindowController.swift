@@ -1,10 +1,8 @@
 import AppKit
 import ExplorerCore
 
-/// One Explorer window. Owns the navigation history and loads the current location.
-///
-/// Phase 0: shows the split-view skeleton and wires Core loading/watching into the
-/// status bar. Real views arrive in Phase 1.
+/// One Explorer window. Owns the navigation history, loads and watches the current
+/// location, and coordinates the sidebar, toolbar, content view and status bar.
 @MainActor
 final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     private static let frameAutosaveName = "ExplorerWindow"
@@ -13,7 +11,8 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
     private let rootViewController = ExplorerRootViewController()
-    private let loader = DirectoryLoader()
+    private let toolbarController = ExplorerToolbarController()
+    private var loader = DirectoryLoader()
     private var loadTask: Task<Void, Never>?
     private var watchTask: Task<Void, Never>?
     private var watcher: DirectoryWatcher?
@@ -43,6 +42,33 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         }
         window.setFrameAutosaveName(Self.frameAutosaveName)
         window.delegate = self
+        window.toolbar = toolbarController.toolbar
+
+        rootViewController.content.onNavigate = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        rootViewController.content.onSelectionChange = { [weak self] in
+            self?.updateStatusBar()
+        }
+        rootViewController.navigationPane.onSelect = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        toolbarController.onNavigate = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        toolbarController.onGoBack = { [weak self] steps in
+            guard let self, let destination = history.goBack(steps: steps) else { return }
+            show(destination)
+        }
+        toolbarController.onGoForward = { [weak self] steps in
+            guard let self, let destination = history.goForward(steps: steps) else { return }
+            show(destination)
+        }
+        toolbarController.onUp = { [weak self] in self?.navigateUp() }
+        toolbarController.onRefresh = { [weak self] in self?.refresh() }
+        toolbarController.backList = { [weak self] in self?.history.backList ?? [] }
+        toolbarController.forwardList = { [weak self] in self?.history.forwardList ?? [] }
+
         show(location)
     }
 
@@ -56,16 +82,45 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         show(location)
     }
 
+    func navigateUp() {
+        guard let parent = history.current.parent else { return }
+        navigate(to: parent)
+    }
+
+    func refresh() {
+        reload()
+    }
+
+    var showsHiddenFiles: Bool { loader.options.includeHidden }
+
+    func setShowsHiddenFiles(_ value: Bool) {
+        guard value != loader.options.includeHidden else { return }
+        loader.options.includeHidden = value
+        reload()
+    }
+
     private func show(_ location: ExplorerLocation) {
         window?.title = location.displayName
-        rootViewController.content.location = location
+        rootViewController.navigationPane.select(location)
+        toolbarController.update(location: location, history: history)
         reload()
         watch(location)
     }
 
     private func reload() {
         loadTask?.cancel()
+
+        if history.current == .thisPC {
+            let items = VolumeLister.mountedVolumes().map { volume in
+                FileItem(url: volume.url.standardizedFileURL, name: volume.name, kind: .directory)
+            }
+            rootViewController.content.setItems(items)
+            updateStatusBar()
+            return
+        }
+
         guard let url = history.current.fileURL else {
+            rootViewController.content.showUnavailable("\(history.current.displayName) isn't available yet.")
             rootViewController.statusBar.text = ""
             return
         }
@@ -73,13 +128,27 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
             do {
                 let items = try await loader.contents(of: url)
                 guard !Task.isCancelled else { return }
-                self?.rootViewController.statusBar.text = items.count == 1 ? "1 item" : "\(items.count) items"
+                self?.rootViewController.content.setItems(items)
+                self?.updateStatusBar()
             } catch is CancellationError {
                 // Superseded by a newer load.
             } catch {
                 self?.rootViewController.statusBar.text = error.localizedDescription
             }
         }
+    }
+
+    private func updateStatusBar() {
+        let content = rootViewController.content
+        let selected = content.selectedItems
+        let selectedSize: Int64? = selected.allSatisfy(\.isFolder)
+            ? nil
+            : selected.reduce(0) { $0 + ($1.size ?? 0) }
+        rootViewController.statusBar.text = StatusBarText.make(
+            totalCount: content.sortedItems.count,
+            selectedCount: selected.count,
+            selectedSizeBytes: selectedSize
+        )
     }
 
     private func watch(_ location: ExplorerLocation) {

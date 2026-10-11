@@ -35,6 +35,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(at: location)
     }
 
+    @objc func toggleHiddenFiles(_ sender: Any?) {
+        guard let controller = activeWindowController else { return }
+        controller.setShowsHiddenFiles(!controller.showsHiddenFiles)
+    }
+
+    @objc func refresh(_ sender: Any?) {
+        activeWindowController?.refresh()
+    }
+
     private var activeWindowController: ExplorerWindowController? {
         windowControllers.first { $0.window == NSApp.keyWindow }
     }
@@ -46,5 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.windowControllers.removeAll { $0 === controller }
         }
         controller.showWindow(nil)
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleHiddenFiles(_:)) {
+            menuItem.state = (activeWindowController?.showsHiddenFiles ?? false) ? .on : .off
+        }
+        return true
     }
 }

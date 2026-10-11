@@ -47,57 +47,6 @@ final class ExplorerRootViewController: NSViewController {
     }
 }
 
-/// Placeholder for the navigation tree (Phase 1).
-@MainActor
-final class NavigationPaneViewController: NSViewController {
-    override func loadView() {
-        let label = NSTextField(labelWithString: "Navigation pane")
-        label.textColor = .secondaryLabelColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-
-        let container = NSView()
-        container.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
-        view = container
-    }
-}
-
-/// Placeholder for the folder views (Phase 1: Details, Phase 3: icon/list/tiles).
-@MainActor
-final class ContentViewController: NSViewController {
-    var location: ExplorerLocation? {
-        didSet { updateLabel() }
-    }
-
-    private let label = NSTextField(labelWithString: "")
-
-    override func loadView() {
-        label.font = .systemFont(ofSize: 15)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .center
-        label.lineBreakMode = .byTruncatingMiddle
-        label.translatesAutoresizingMaskIntoConstraints = false
-
-        let container = NSView()
-        container.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 16),
-        ])
-        view = container
-        updateLabel()
-    }
-
-    private func updateLabel() {
-        guard isViewLoaded else { return }
-        label.stringValue = location.map { $0.fileURL?.path ?? $0.displayName } ?? ""
-    }
-}
-
 /// Bottom status bar ("N items | M items selected 1.2 MB").
 @MainActor
 final class StatusBarView: NSView {

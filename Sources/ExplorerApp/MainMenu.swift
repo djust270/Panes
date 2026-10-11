@@ -73,6 +73,12 @@ enum MainMenu {
                      action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
             .keyEquivalentModifierMask = [.command, .control]
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Show Hidden Files",
+                     action: #selector(AppDelegate.toggleHiddenFiles(_:)), keyEquivalent: ".")
+            .keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Refresh", action: #selector(AppDelegate.refresh(_:)), keyEquivalent: "r")
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Enter Full Screen",
                      action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]
