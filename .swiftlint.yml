@@ -1,0 +1,27 @@
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - build
+
+disabled_rules:
+  - identifier_name     # C interop names (fd, attrlist fields) are clearer as-is
+  - todo
+
+opt_in_rules:
+  - empty_count
+  - first_where
+  - sorted_first_last
+  - unused_import
+
+line_length:
+  warning: 120
+  error: 160
+
+type_body_length:
+  warning: 400
+
+file_length:
+  warning: 600
