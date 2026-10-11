@@ -13,8 +13,11 @@ import Testing
         try await Task.sleep(for: .milliseconds(300))
         try temp.createFile("new.txt")
 
-        let change = try await firstChange(in: changes, timeout: .seconds(5))
-        #expect(change.mustRescan || change.paths.contains { $0.hasSuffix("/new.txt") })
+        // Earlier events (e.g. the temp directory's own creation) may arrive first.
+        let received = try await collectChanges(in: changes, timeout: .seconds(5)) { change in
+            change.mustRescan || change.paths.contains { $0.hasSuffix("/new.txt") }
+        }
+        #expect(!received.isEmpty)
     }
 
     @Test func ignoresGrandchildrenWhenNotWatchingSubtree() async throws {
@@ -31,10 +34,11 @@ import Testing
         try await Task.sleep(for: .milliseconds(300))
         try temp.createFile("marker.txt")
 
-        // The first change delivered must be the marker, not the grandchild.
-        let change = try await firstChange(in: changes, timeout: .seconds(5))
-        #expect(!change.paths.contains { $0.hasSuffix("/deep.txt") })
-        #expect(change.paths.contains { $0.hasSuffix("/marker.txt") })
+        // Nothing delivered before (or with) the marker may mention the grandchild.
+        let received = try await collectChanges(in: changes, timeout: .seconds(5)) { change in
+            change.paths.contains { $0.hasSuffix("/marker.txt") }
+        }
+        #expect(!received.flatMap(\.paths).contains { $0.hasSuffix("/deep.txt") })
     }
 
     @Test func stopFinishesStream() async throws {
@@ -48,13 +52,20 @@ import Testing
         #expect(received == 0)
     }
 
-    private func firstChange(
+    /// Collects changes up to and including the first one matching `isTarget`.
+    /// Records an issue and throws if no match arrives within `timeout`.
+    private func collectChanges(
         in changes: AsyncStream<DirectoryWatcher.Change>,
-        timeout: Duration
-    ) async throws -> DirectoryWatcher.Change {
-        try await withThrowingTaskGroup(of: DirectoryWatcher.Change?.self) { group in
+        timeout: Duration,
+        until isTarget: @escaping @Sendable (DirectoryWatcher.Change) -> Bool
+    ) async throws -> [DirectoryWatcher.Change] {
+        try await withThrowingTaskGroup(of: [DirectoryWatcher.Change]?.self) { group in
             group.addTask {
-                for await change in changes { return change }
+                var received: [DirectoryWatcher.Change] = []
+                for await change in changes {
+                    received.append(change)
+                    if isTarget(change) { return received }
+                }
                 return nil
             }
             group.addTask {
@@ -64,7 +75,7 @@ import Testing
             let result = try await group.next() ?? nil
             group.cancelAll()
             guard let result else {
-                Issue.record("No change within \(timeout)")
+                Issue.record("No matching change within \(timeout)")
                 throw CancellationError()
             }
             return result
