@@ -12,6 +12,7 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 |---|---|
 | Build | `swift build` |
 | Run (unbundled) | `swift run ExplorerApp` |
+| Lint | `scripts/lint.sh` (needs `brew install swiftlint`) |
 | Test | `scripts/test.sh` |
 | Test incl. 100k-file perf check | `EXPLORER_PERF_TESTS=1 scripts/test.sh` |
 | Build `build/Explorer.app` | `scripts/bundle.sh` |

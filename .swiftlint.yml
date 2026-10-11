@@ -9,11 +9,14 @@ excluded:
 disabled_rules:
   - identifier_name     # C interop names (fd, attrlist fields) are clearer as-is
   - todo
+  - trailing_comma      # trailing commas keep diffs clean in multi-line literals
 
 opt_in_rules:
   - empty_count
   - first_where
   - sorted_first_last
+
+analyzer_rules:         # run via `swiftlint analyze`
   - unused_import
 
 line_length:

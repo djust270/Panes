@@ -12,6 +12,16 @@ enum BulkDirectoryReader {
 
     private static let bufferSize = 256 * 1024
 
+    // The C constants are imported with mixed Int32/UInt32 types; normalise them once.
+    private static let cmnReturnedAttrs = attrgroup_t(truncatingIfNeeded: ATTR_CMN_RETURNED_ATTRS)
+    private static let cmnName = attrgroup_t(truncatingIfNeeded: ATTR_CMN_NAME)
+    private static let cmnError = attrgroup_t(truncatingIfNeeded: ATTR_CMN_ERROR)
+    private static let cmnObjType = attrgroup_t(truncatingIfNeeded: ATTR_CMN_OBJTYPE)
+    private static let cmnCrTime = attrgroup_t(truncatingIfNeeded: ATTR_CMN_CRTIME)
+    private static let cmnModTime = attrgroup_t(truncatingIfNeeded: ATTR_CMN_MODTIME)
+    private static let cmnFlags = attrgroup_t(truncatingIfNeeded: ATTR_CMN_FLAGS)
+    private static let fileDataLength = attrgroup_t(truncatingIfNeeded: ATTR_FILE_DATALENGTH)
+
     static func read(_ directory: URL, includeHidden: Bool) throws -> [FileItem] {
         let fd = open(directory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fd >= 0 else { throw posixError(errno, directory) }
@@ -19,16 +29,8 @@ enum BulkDirectoryReader {
 
         var request = attrlist()
         request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        // The C constants are imported with mixed Int32/UInt32 types; normalise them.
-        let returnedAttrs = attrgroup_t(truncatingIfNeeded: ATTR_CMN_RETURNED_ATTRS)
-        let name = attrgroup_t(truncatingIfNeeded: ATTR_CMN_NAME)
-        let error = attrgroup_t(truncatingIfNeeded: ATTR_CMN_ERROR)
-        let objType = attrgroup_t(truncatingIfNeeded: ATTR_CMN_OBJTYPE)
-        let crTime = attrgroup_t(truncatingIfNeeded: ATTR_CMN_CRTIME)
-        let modTime = attrgroup_t(truncatingIfNeeded: ATTR_CMN_MODTIME)
-        let flags = attrgroup_t(truncatingIfNeeded: ATTR_CMN_FLAGS)
-        request.commonattr = returnedAttrs | name | error | objType | crTime | modTime | flags
-        request.fileattr = attrgroup_t(ATTR_FILE_DATALENGTH)
+        request.commonattr = cmnReturnedAttrs | cmnName | cmnError | cmnObjType | cmnCrTime | cmnModTime | cmnFlags
+        request.fileattr = fileDataLength
 
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
         defer { buffer.deallocate() }
@@ -49,7 +51,8 @@ enum BulkDirectoryReader {
             for _ in 0..<count {
                 let length = Int(entry.loadUnaligned(as: UInt32.self))
                 defer { entry += length }
-                if let item = parseEntry(entry, in: directory, includeHidden: includeHidden, types: &types) {
+                guard let raw = decodeEntry(entry) else { continue }
+                if let item = makeItem(raw, in: directory, includeHidden: includeHidden, types: &types) {
                     items.append(item)
                 }
             }
@@ -57,67 +60,43 @@ enum BulkDirectoryReader {
         return items
     }
 
-    /// Layout per entry: length, returned attribute set, then requested attributes in
-    /// bit order (ATTR_CMN_ERROR first), each present only if flagged as returned.
-    private static func parseEntry(
-        _ start: UnsafeRawPointer,
+    /// Decodes one entry. Layout: length, returned attribute set, then the requested
+    /// attributes in bit order (ATTR_CMN_ERROR first), each present only if returned.
+    private static func decodeEntry(_ start: UnsafeRawPointer) -> RawEntry? {
+        var cursor = AttributeCursor(start + MemoryLayout<UInt32>.size)
+        let returned = cursor.next(attribute_set_t.self)
+        let common = returned.commonattr
+
+        if common & cmnError != 0, cursor.next(UInt32.self) != 0 { return nil }
+        guard common & cmnName != 0 else { return nil }
+
+        let nameStart = cursor.pointer
+        let nameRef = cursor.next(attrreference_t.self)
+        var raw = RawEntry(
+            name: String(cString: (nameStart + Int(nameRef.attr_dataoffset)).assumingMemoryBound(to: CChar.self))
+        )
+
+        if common & cmnObjType != 0 { raw.objectType = cursor.next(fsobj_type_t.self) }
+        if common & cmnCrTime != 0 { raw.created = date(cursor.next(timespec.self)) }
+        if common & cmnModTime != 0 { raw.modified = date(cursor.next(timespec.self)) }
+        if common & cmnFlags != 0 { raw.flags = cursor.next(UInt32.self) }
+        if returned.fileattr & fileDataLength != 0 { raw.size = cursor.next(off_t.self) }
+        return raw
+    }
+
+    private static func makeItem(
+        _ raw: RawEntry,
         in directory: URL,
         includeHidden: Bool,
         types: inout TypeCache
     ) -> FileItem? {
-        var cursor = start + MemoryLayout<UInt32>.size
-        let returned = cursor.loadUnaligned(as: attribute_set_t.self)
-        cursor += MemoryLayout<attribute_set_t>.size
-        let common = returned.commonattr
-
-        if common & attrgroup_t(ATTR_CMN_ERROR) != 0 {
-            let error = cursor.loadUnaligned(as: UInt32.self)
-            cursor += MemoryLayout<UInt32>.size
-            if error != 0 { return nil }
-        }
-
-        guard common & attrgroup_t(ATTR_CMN_NAME) != 0 else { return nil }
-        let nameRef = cursor.loadUnaligned(as: attrreference_t.self)
-        let namePointer = (cursor + Int(nameRef.attr_dataoffset)).assumingMemoryBound(to: CChar.self)
-        let name = String(cString: namePointer)
-        cursor += MemoryLayout<attrreference_t>.size
-
-        var objectType = fsobj_type_t(VREG.rawValue)
-        if common & attrgroup_t(ATTR_CMN_OBJTYPE) != 0 {
-            objectType = cursor.loadUnaligned(as: fsobj_type_t.self)
-            cursor += MemoryLayout<fsobj_type_t>.size
-        }
-
-        var created: Date?
-        if common & attrgroup_t(ATTR_CMN_CRTIME) != 0 {
-            created = date(cursor.loadUnaligned(as: timespec.self))
-            cursor += MemoryLayout<timespec>.size
-        }
-
-        var modified: Date?
-        if common & attrgroup_t(ATTR_CMN_MODTIME) != 0 {
-            modified = date(cursor.loadUnaligned(as: timespec.self))
-            cursor += MemoryLayout<timespec>.size
-        }
-
-        var flags: UInt32 = 0
-        if common & attrgroup_t(ATTR_CMN_FLAGS) != 0 {
-            flags = cursor.loadUnaligned(as: UInt32.self)
-            cursor += MemoryLayout<UInt32>.size
-        }
-
-        var size: Int64?
-        if returned.fileattr & attrgroup_t(ATTR_FILE_DATALENGTH) != 0 {
-            size = cursor.loadUnaligned(as: off_t.self)
-        }
-
-        let isHidden = name.hasPrefix(".") || flags & UInt32(UF_HIDDEN) != 0
+        let isHidden = raw.name.hasPrefix(".") || raw.flags & UInt32(UF_HIDDEN) != 0
         if isHidden && !includeHidden { return nil }
 
-        let ext = (name as NSString).pathExtension.lowercased()
+        let ext = (raw.name as NSString).pathExtension.lowercased()
         let kind: FileItem.Kind
         let typeIdentifier: String?
-        switch objectType {
+        switch raw.objectType {
         case fsobj_type_t(VDIR.rawValue):
             if let type = types.type(forExtension: ext, directory: true), type.conforms(to: .package) {
                 kind = .package
@@ -135,12 +114,12 @@ enum BulkDirectoryReader {
         }
 
         return FileItem(
-            url: directory.appendingPathComponent(name, isDirectory: kind == .directory || kind == .package),
-            name: name,
+            url: directory.appendingPathComponent(raw.name, isDirectory: kind == .directory || kind == .package),
+            name: raw.name,
             kind: kind,
-            size: kind == .directory ? nil : size,
-            dateModified: modified,
-            dateCreated: created,
+            size: kind == .directory ? nil : raw.size,
+            dateModified: raw.modified,
+            dateCreated: raw.created,
             isHidden: isHidden,
             typeIdentifier: typeIdentifier
         )
@@ -159,24 +138,49 @@ enum BulkDirectoryReader {
         }
         return CocoaError(cocoaCode, userInfo: [NSURLErrorKey: url, NSUnderlyingErrorKey: posix])
     }
+}
 
-    /// Memoises extension → UTType lookups; folders usually repeat a handful of extensions.
-    private struct TypeCache {
-        private struct Key: Hashable {
-            let ext: String
-            let directory: Bool
-        }
+/// Attributes decoded from one `getattrlistbulk` entry, before classification.
+private struct RawEntry {
+    var name: String
+    var objectType = fsobj_type_t(VREG.rawValue)
+    var created: Date?
+    var modified: Date?
+    var flags: UInt32 = 0
+    var size: Int64?
+}
 
-        private var cache: [Key: UTType?] = [:]
+/// Reads consecutive, possibly unaligned values from an attribute buffer.
+private struct AttributeCursor {
+    private(set) var pointer: UnsafeRawPointer
 
-        /// Directory extensions (e.g. `app`) are only found when searching under `.directory`.
-        mutating func type(forExtension ext: String, directory: Bool) -> UTType? {
-            guard !ext.isEmpty else { return nil }
-            let key = Key(ext: ext, directory: directory)
-            if let cached = cache[key] { return cached }
-            let type = UTType(filenameExtension: ext, conformingTo: directory ? .directory : .data)
-            cache[key] = type
-            return type
-        }
+    init(_ pointer: UnsafeRawPointer) {
+        self.pointer = pointer
+    }
+
+    mutating func next<T: BitwiseCopyable>(_: T.Type) -> T {
+        let value = pointer.loadUnaligned(as: T.self)
+        pointer += MemoryLayout<T>.size
+        return value
+    }
+}
+
+/// Memoises extension → UTType lookups; folders usually repeat a handful of extensions.
+private struct TypeCache {
+    private struct Key: Hashable {
+        let ext: String
+        let directory: Bool
+    }
+
+    private var cache: [Key: UTType?] = [:]
+
+    /// Directory extensions (e.g. `app`) are only found when searching under `.directory`.
+    mutating func type(forExtension ext: String, directory: Bool) -> UTType? {
+        guard !ext.isEmpty else { return nil }
+        let key = Key(ext: ext, directory: directory)
+        if let cached = cache[key] { return cached }
+        let type = UTType(filenameExtension: ext, conformingTo: directory ? .directory : .data)
+        cache[key] = type
+        return type
     }
 }
