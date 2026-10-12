@@ -1,22 +1,31 @@
 import AppKit
 import ExplorerCore
 
-/// Window layout: navigation pane | content | preview/details pane, with a status bar along
-/// the bottom.
+/// One tab's layout, as in Windows 11 Explorer: the address bar and command bar on the
+/// header layer; below them the navigation pane | content | preview/details pane; and a
+/// status bar along the bottom.
 @MainActor
 final class ExplorerRootViewController: NSViewController {
     let navigationPane = NavigationPaneViewController()
     let content = ContentViewController()
     let sidePane = SidePaneViewController()
+    let addressBar = AddressBarView()
+    let commandBar = CommandBarView()
     let statusBar = StatusBarView()
     private let splitViewController = NSSplitViewController()
+    private var navigationItem: NSSplitViewItem?
     private var sidePaneItem: NSSplitViewItem?
 
+    private static let navigationPaneKey = "NavigationPaneHidden"
+
     override func loadView() {
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: navigationPane)
-        sidebarItem.minimumThickness = 180
-        sidebarItem.maximumThickness = 400
-        sidebarItem.canCollapse = true
+        let navigationItem = NSSplitViewItem(viewController: navigationPane)
+        navigationItem.minimumThickness = 180
+        navigationItem.maximumThickness = 400
+        navigationItem.canCollapse = true
+        navigationItem.holdingPriority = .defaultLow + 20
+        navigationItem.isCollapsed = UserDefaults.standard.bool(forKey: Self.navigationPaneKey)
+        self.navigationItem = navigationItem
 
         let contentItem = NSSplitViewItem(viewController: content)
         contentItem.minimumThickness = 300
@@ -29,21 +38,52 @@ final class ExplorerRootViewController: NSViewController {
         sidePaneItem = paneItem
 
         splitViewController.splitView.isVertical = true
+        splitViewController.splitView.dividerStyle = .thin
         splitViewController.splitView.autosaveName = "ExplorerSplitView"
-        splitViewController.addSplitViewItem(sidebarItem)
+        splitViewController.addSplitViewItem(navigationItem)
         splitViewController.addSplitViewItem(contentItem)
         splitViewController.addSplitViewItem(paneItem)
         addChild(splitViewController)
 
+        view = makeLayout()
+        showSidePane(SidePaneViewController.savedPane, animated: false)
+    }
+
+    /// Header layer (address and command bars) over the body (panes and status bar).
+    private func makeLayout() -> NSView {
+        let header = LayerView(color: Theme.headerColor)
+        header.drawsBottomDivider = true
+        let body = LayerView(color: Theme.bodyColor)
+
         let splitView = splitViewController.view
         let container = NSView()
-        for subview in [splitView, statusBar] {
+        for subview in [header, body, addressBar, commandBar, splitView, statusBar] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(subview)
         }
 
         NSLayoutConstraint.activate([
-            splitView.topAnchor.constraint(equalTo: container.topAnchor),
+            header.topAnchor.constraint(equalTo: container.topAnchor),
+            header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            header.bottomAnchor.constraint(equalTo: commandBar.bottomAnchor),
+
+            addressBar.topAnchor.constraint(equalTo: container.topAnchor),
+            addressBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            addressBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            addressBar.heightAnchor.constraint(equalToConstant: Theme.addressBarHeight),
+
+            commandBar.topAnchor.constraint(equalTo: addressBar.bottomAnchor),
+            commandBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            commandBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            commandBar.heightAnchor.constraint(equalToConstant: Theme.commandBarHeight),
+
+            body.topAnchor.constraint(equalTo: header.bottomAnchor),
+            body.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            splitView.topAnchor.constraint(equalTo: header.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
@@ -53,9 +93,17 @@ final class ExplorerRootViewController: NSViewController {
             statusBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             statusBar.heightAnchor.constraint(equalToConstant: 24),
         ])
+        return container
+    }
 
-        view = container
-        showSidePane(SidePaneViewController.savedPane, animated: false)
+    var isNavigationPaneShown: Bool { navigationItem?.isCollapsed == false }
+
+    /// View › Show › Navigation pane; app-wide, as on Windows.
+    func toggleNavigationPane() {
+        guard let navigationItem else { return }
+        let collapse = !navigationItem.isCollapsed
+        navigationItem.animator().isCollapsed = collapse
+        UserDefaults.standard.set(collapse, forKey: Self.navigationPaneKey)
     }
 
     /// Shows the Preview or Details pane, or hides it (`.none`).
@@ -89,7 +137,7 @@ final class StatusBarView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.font = Theme.font(ofSize: NSFont.smallSystemFontSize)
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         detailsButton.target = self

@@ -51,4 +51,18 @@ import Testing
         // UTF-16 units, not characters.
         #expect(FileNaming.renameSelection(for: "😀.txt", hasExtension: true) == NSRange(location: 0, length: 2))
     }
+
+    @Test func zipNamesDropTheExtension() {
+        #expect(FileNaming.zipName(for: "report.docx") == "report.zip")
+        #expect(FileNaming.zipName(for: "Photos", hasExtension: false) == "Photos.zip")
+        #expect(FileNaming.zipName(for: "Folder.v2", hasExtension: false) == "Folder.v2.zip")
+        #expect(FileNaming.zipName(for: ".zshrc") == ".zshrc.zip")
+    }
+
+    @Test func copyAsPathQuotesEachPath() {
+        let urls = [URL(fileURLWithPath: "/Users/me/a b.txt"), URL(fileURLWithPath: "/tmp")]
+        #expect(FileNaming.quotedPaths(urls) == "\"/Users/me/a b.txt\"\n\"/tmp\"")
+        #expect(FileNaming.unquotedPath("  \"/Users/me/a b\"\n") == "/Users/me/a b")
+        #expect(FileNaming.unquotedPath("~/Documents") == "~/Documents")
+    }
 }

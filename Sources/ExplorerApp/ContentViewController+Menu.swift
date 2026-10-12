@@ -1,10 +1,11 @@
 import AppKit
 import ExplorerCore
 
-/// Right-click menus. Right-clicking an unselected item selects it, and right-clicking the
-/// background clears the selection, as in Windows. Actions travel up the responder chain to
-/// `ExplorerWindowController`, which also validates them. The Details header has its own
-/// menu: Size column to fit, and the column chooser.
+/// Right-click menus, laid out like Windows 11's: a row of icons for Cut, Copy, Rename, Share
+/// and Delete, then the main commands, with the rest under "Show more options". Right-clicking
+/// an unselected item selects it, and right-clicking the background clears the selection, as
+/// in Windows. Actions travel up the responder chain to the tab, which also validates them.
+/// The Details header has its own menu: Size column to fit, and the column chooser.
 extension ContentViewController: NSMenuDelegate {
     func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
@@ -50,36 +51,67 @@ extension ContentViewController: NSMenuDelegate {
         menu.removeAllItems()
         finishRenaming(commit: true)
         let onItem = prepareClickedItem(for: menu) != nil
+        let selection = selectedItems
+        let hasFolders = selection.contains(where: \.isFolder)
 
         switch (mode, onItem) {
         case (.folder, true):
-            menu.add("Open", #selector(ExplorerWindowController.openSelection(_:)))
-            menu.addItem(.separator())
-            menu.add("Cut", #selector(NSText.cut(_:)), key: "x")
-            menu.add("Copy", #selector(NSText.copy(_:)), key: "c")
-            menu.addItem(.separator())
-            menu.add("Rename", #selector(ExplorerWindowController.renameSelection(_:)),
-                     key: MainMenu.f2Key, modifiers: [])
-            menu.add("Delete", #selector(ExplorerWindowController.delete(_:)), key: MainMenu.backspaceKey)
+            addFolderItemCommands(to: menu, hasFolders: hasFolders, files: selection.filter { !$0.isFolder })
         case (.folder, false):
             addViewItems(to: menu)
-            menu.add("Paste", #selector(NSText.paste(_:)), key: "v")
+            menu.add("Paste", #selector(NSText.paste(_:)), command: .paste)
+            if let undo = view.window?.undoManager, undo.canUndo {
+                let title = undo.undoActionName.isEmpty ? "Undo" : "Undo \(undo.undoActionName)"
+                menu.add(title, Selector(("undo:")), command: .undo)
+            }
             menu.addItem(.separator())
             menu.addItem(MainMenu.newSubmenuItem())
-        case (.recycleBin, true):
-            menu.add("Restore", #selector(ExplorerWindowController.restoreSelection(_:)))
             menu.addItem(.separator())
-            menu.add("Cut", #selector(NSText.cut(_:)), key: "x")
-            menu.add("Delete", #selector(ExplorerWindowController.delete(_:)), key: MainMenu.backspaceKey)
+            menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+        case (.recycleBin, true):
+            menu.add("Restore", #selector(ExplorerTabController.restoreSelection(_:)))
+            menu.addItem(.separator())
+            menu.add("Cut", #selector(NSText.cut(_:)), command: .cut)
+            menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
         case (.recycleBin, false):
             addViewItems(to: menu)
-            menu.add("Empty Recycle Bin", #selector(ExplorerWindowController.emptyRecycleBin(_:)))
-            menu.add("Restore all items", #selector(ExplorerWindowController.restoreAll(_:)))
+            menu.add("Empty Recycle Bin", #selector(ExplorerTabController.emptyRecycleBin(_:)))
+            menu.add("Restore all items", #selector(ExplorerTabController.restoreAll(_:)))
         case (.volumes, true):
-            menu.add("Open", #selector(ExplorerWindowController.openSelection(_:)))
+            menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open)
+            menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
+            menu.add("Open in new window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
         case (.volumes, false):
             addViewItems(to: menu)
         }
+    }
+
+    /// Windows 11's item menu: the icon row, Open (in a new tab or window, or with an app),
+    /// Compress, Copy as path, and "Show more options".
+    private func addFolderItemCommands(to menu: NSMenu, hasFolders: Bool, files: [FileItem]) {
+        menu.addItem(ContextMenuIconRow.item(buttons: [
+            .init(symbol: "scissors", title: "Cut", action: #selector(NSText.cut(_:))),
+            .init(symbol: "doc.on.doc", title: "Copy", action: #selector(NSText.copy(_:))),
+            .init(symbol: "character.cursor.ibeam", title: "Rename",
+                  action: #selector(ExplorerTabController.renameSelection(_:))),
+            .init(symbol: "square.and.arrow.up", title: "Share",
+                  action: #selector(ExplorerTabController.shareSelection(_:))),
+            .init(symbol: "trash", title: "Delete", action: #selector(ExplorerTabController.delete(_:))),
+        ], from: activeView))
+        menu.addItem(.separator())
+        menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open)
+        if hasFolders {
+            menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
+            menu.add("Open in new window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
+        }
+        if !files.isEmpty {
+            menu.addItem(openWithItem(for: files.map(\.url)))
+        }
+        menu.addItem(.separator())
+        menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+        menu.addItem(.separator())
+        menu.addItem(moreOptionsItem())
     }
 
     /// Windows' background menu starts with View ▸, Sort by ▸, Group by ▸ and Refresh.
@@ -87,8 +119,76 @@ extension ContentViewController: NSMenuDelegate {
         menu.addItem(MainMenu.viewSubmenuItem())
         menu.addItem(MainMenu.sortBySubmenuItem())
         menu.addItem(MainMenu.groupBySubmenuItem())
-        menu.add("Refresh", #selector(AppDelegate.refresh(_:)), key: "r")
+        menu.add("Refresh", #selector(ExplorerTabController.refresh(_:)), command: .refresh)
         menu.addItem(.separator())
+    }
+
+    /// "Open with ▸ <default app> / other apps / Choose another app…".
+    private func openWithItem(for files: [URL]) -> NSMenuItem {
+        let submenu = NSMenu(title: "Open with")
+        let apps = ExplorerTabController.apps(toOpen: files)
+        func addApp(_ url: URL) {
+            let name = FileManager.default.displayName(atPath: url.path)
+            let title = (name as NSString).deletingPathExtension
+            let item = submenu.add(title, #selector(ExplorerTabController.openWith(_:)), modifiers: [])
+            item.representedObject = url
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+        }
+        if let defaultApp = apps.default {
+            addApp(defaultApp)
+            if !apps.others.isEmpty { submenu.addItem(.separator()) }
+        }
+        apps.others.prefix(30).forEach(addApp)
+        submenu.addItem(.separator())
+        submenu.add("Choose another app…", #selector(ExplorerTabController.openWithOtherApp(_:)), modifiers: [])
+        let item = NSMenuItem(title: "Open with", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    /// "Show more options ▸": the classic commands, including Send to.
+    private func moreOptionsItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Show more options")
+        submenu.addItem(sendToItem())
+        submenu.addItem(.separator())
+        submenu.add("Cut", #selector(NSText.cut(_:)), command: .cut)
+        submenu.add("Copy", #selector(NSText.copy(_:)), command: .copy)
+        submenu.addItem(.separator())
+        submenu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
+        submenu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename)
+        let item = NSMenuItem(title: "Show more options", action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "ellipsis.rectangle", accessibilityDescription: nil)
+        item.submenu = submenu
+        return item
+    }
+
+    /// "Send to ▸ Desktop, Documents, Downloads, Mail recipient, <removable drives>": copies there.
+    private func sendToItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Send to")
+        let fileManager = FileManager.default
+        let folders: [(String, FileManager.SearchPathDirectory)] = [
+            ("Desktop", .desktopDirectory), ("Documents", .documentDirectory), ("Downloads", .downloadsDirectory),
+        ]
+        for (title, directory) in folders {
+            guard let url = fileManager.urls(for: directory, in: .userDomainMask).first else { continue }
+            let item = submenu.add(title, #selector(ExplorerTabController.sendTo(_:)), modifiers: [])
+            item.representedObject = url
+            item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+        }
+        let mail = submenu.add("Mail recipient", #selector(ExplorerTabController.sendToMail(_:)), modifiers: [])
+        mail.image = NSImage(systemSymbolName: "envelope", accessibilityDescription: nil)
+        let drives = VolumeLister.mountedVolumes().filter { !$0.isInternal }
+        if !drives.isEmpty { submenu.addItem(.separator()) }
+        for drive in drives {
+            let item = submenu.add(drive.name, #selector(ExplorerTabController.sendTo(_:)), modifiers: [])
+            item.representedObject = drive.url
+            item.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: nil)
+        }
+        let item = NSMenuItem(title: "Send to", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 
     // MARK: Header menu

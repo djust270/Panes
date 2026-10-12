@@ -3,7 +3,7 @@ import ExplorerCore
 
 /// View commands: layout, sort, group, panes, item checkboxes, selection, and per-folder view
 /// memory. Changes the user makes are saved for the folder being shown.
-extension ExplorerWindowController {
+extension ExplorerTabController {
     @objc func chooseViewMode(_ sender: NSMenuItem) {
         guard ViewMode.allCases.indices.contains(sender.tag) else { return }
         setViewMode(ViewMode.allCases[sender.tag])
@@ -59,6 +59,25 @@ extension ExplorerWindowController {
         updateSidePane()
     }
 
+    @objc func toggleNavigationPane(_ sender: Any?) {
+        rootViewController.toggleNavigationPane()
+    }
+
+    /// Filter ▸ <kind> toggles that kind; Filter ▸ Clear filter (no kind) shows everything.
+    @objc func filterByKind(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let kind = FileKind(rawValue: raw) else {
+            content.kindFilter = []
+            updateStatusBar()
+            return
+        }
+        if content.kindFilter.contains(kind) {
+            content.kindFilter.remove(kind)
+        } else {
+            content.kindFilter.insert(kind)
+        }
+        updateStatusBar()
+    }
+
     @objc func toggleItemCheckboxes(_ sender: Any?) {
         content.showsCheckboxes.toggle()
     }
@@ -80,7 +99,7 @@ extension ExplorerWindowController {
                 + "The Recycle Bin and This PC keep their own views."
             alert.addButton(withTitle: "Yes")
             alert.addButton(withTitle: "No")
-            guard await presentAlert(alert) == .alertFirstButtonReturn else { return }
+            guard await present(alert) == .alertFirstButtonReturn else { return }
             FolderViewMemory.store.applyToAllFolders(content.settings)
         }
     }
@@ -92,7 +111,7 @@ extension ExplorerWindowController {
             alert.messageText = "Do you want to reset all folders to their default view settings?"
             alert.addButton(withTitle: "Reset")
             alert.addButton(withTitle: "Cancel")
-            guard await presentAlert(alert) == .alertFirstButtonReturn else { return }
+            guard await present(alert) == .alertFirstButtonReturn else { return }
             FolderViewMemory.store.resetAllFolders()
             content.show(mode: content.mode, settings: FolderViewMemory.store.settings(for: history.current))
             reload()
@@ -107,13 +126,6 @@ extension ExplorerWindowController {
         )
     }
 
-    private func presentAlert(_ alert: NSAlert) async -> NSApplication.ModalResponse {
-        guard let window else { return alert.runModal() }
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
-        }
-    }
-
     // MARK: Validation
 
     /// Validates the commands above; `nil` for anything else.
@@ -126,6 +138,13 @@ extension ExplorerWindowController {
         case #selector(toggleDetailsPane(_:)):
             menuItem.state = rootViewController.sidePane.pane == .details ? .on : .off
             return true
+        case #selector(toggleNavigationPane(_:)):
+            menuItem.state = rootViewController.isNavigationPaneShown ? .on : .off
+            return true
+        case #selector(filterByKind(_:)):
+            let kind = (menuItem.representedObject as? String).flatMap(FileKind.init(rawValue:))
+            menuItem.state = kind.map(content.kindFilter.contains) == true ? .on : .off
+            return kind == nil ? !content.kindFilter.isEmpty : currentFolder != nil
         case #selector(toggleItemCheckboxes(_:)):
             menuItem.state = content.showsCheckboxes ? .on : .off
             return true

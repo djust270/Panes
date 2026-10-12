@@ -35,6 +35,8 @@ final class ContentViewController: NSViewController {
     private static let checkboxesKey = "ShowItemCheckboxes"
 
     var onNavigate: ((ExplorerLocation) -> Void)?
+    /// Middle-click or "Open in new tab" on a folder.
+    var onOpenInNewTab: ((ExplorerLocation) -> Void)?
     var onSelectionChange: (() -> Void)?
     /// The user finished renaming `item` to the given name.
     var onRename: ((FileItem, String) -> Void)?
@@ -71,6 +73,14 @@ final class ContentViewController: NSViewController {
     var allItems: [FileItem] { listContent.allItems }
     /// Group IDs the user collapsed; forgotten on navigation.
     var collapsedGroups: Set<String> = []
+    /// The command bar's Filter: kinds of items to show (all if empty); forgotten on navigation.
+    var kindFilter: Set<FileKind> = [] {
+        didSet {
+            guard kindFilter != oldValue else { return }
+            refreshContent()
+        }
+    }
+    var typeAhead = TypeAheadSelector()
 
     var isDetailsMode: Bool { settings.viewMode == .details }
 
@@ -155,6 +165,8 @@ final class ContentViewController: NSViewController {
         finishRenaming(commit: true)
         self.mode = mode
         collapsedGroups = []
+        kindFilter = []
+        typeAhead.reset()
         items = []
         propertiesTask?.cancel()
         propertiesCache = [:]
@@ -258,7 +270,7 @@ final class ContentViewController: NSViewController {
 
     /// Rebuilds `listContent` from `items` and reloads the active view.
     func rebuild(selecting selection: Set<URL>, scroll: Bool) {
-        let shown = settings.needsProperties ? itemsWithProperties() : items
+        let shown = kindFilter.filter(settings.needsProperties ? itemsWithProperties() : items)
         listContent = FileListContent(
             items: shown,
             sort: settings.sort,
@@ -377,6 +389,56 @@ final class ContentViewController: NSViewController {
         }
         for item in selected where !item.isFolder {
             NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    /// Type-ahead: selects the next item whose name starts with what's been typed. Returns
+    /// `false` if the key should be handled normally (a space with nothing typed yet).
+    func typeAhead(_ text: String) -> Bool {
+        let now = Date()
+        if text == " ", typeAhead.currentPrefix(at: now) == nil { return false }
+        let visible = listContent.sections.flatMap(\.items)
+        let selected = selectedURLs
+        let current = visible.firstIndex { selected.contains($0.url.standardizedFileURL) }
+        if let index = typeAhead.type(text, at: now, names: visible.map(\.name), current: current) {
+            setSelection([visible[index].url.standardizedFileURL], scroll: true)
+        } else {
+            NSSound.beep()
+        }
+        return true
+    }
+
+    /// Middle-click on a folder opens it in a new tab.
+    func openInNewTab(_ item: FileItem) {
+        guard item.isFolder, mode != .recycleBin else { return }
+        onOpenInNewTab?(.folder(item.url))
+    }
+
+    /// Where to anchor a popover for the selection (e.g. the share sheet), in `activeView`.
+    func anchorRectForSelection() -> NSRect {
+        guard let url = selectedURLs.first else { return NSRect(origin: .zero, size: NSSize(width: 1, height: 1)) }
+        if isDetailsMode, let row = listContent.row(of: url) {
+            let rect = tableView.rect(ofRow: row)
+            return NSRect(x: rect.minX + 20, y: rect.minY, width: min(rect.width, 200), height: rect.height)
+        }
+        if let position = listContent.position(of: url),
+           let item = collectionView.item(at: IndexPath(item: position.index, section: position.section)) {
+            return item.view.frame
+        }
+        return collectionView.visibleRect.insetBy(dx: collectionView.visibleRect.width / 2 - 1, dy: 0)
+    }
+
+    /// Re-applies theme settings (row heights, colours, fonts) after they change.
+    func applyTheme() {
+        guard isViewLoaded else { return }
+        tableView.rowHeight = Theme.detailsRowHeight
+        collectionView.backgroundColors = [Theme.bodyColor]
+        tableView.backgroundColor = Theme.bodyColor
+        if isDetailsMode {
+            tableView.reloadData()
+            setSelection(selectedURLs, scroll: false)
+        } else {
+            reconfigureVisibleItems()
         }
     }
 

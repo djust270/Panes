@@ -7,19 +7,28 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     private static let columnWidthsKey = "DetailsColumnWidths"
 
     func configureTableView() {
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
+        tableView.style = .fullWidth
+        tableView.backgroundColor = Theme.bodyColor
+        tableView.intercellSpacing = NSSize(width: 6, height: 0)
+        tableView.allowsTypeSelect = false
         tableView.allowsMultipleSelection = true
         tableView.allowsColumnReordering = true
         tableView.allowsColumnResizing = true
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.floatsGroupRows = false
         tableView.rowSizeStyle = .custom
-        tableView.rowHeight = 22
+        tableView.rowHeight = Theme.detailsRowHeight
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(activateSelection)
         tableView.onActivateSelection = { [weak self] in self?.activateSelection() }
+        tableView.onTypeAhead = { [weak self] text in self?.typeAhead(text) ?? false }
+        tableView.onMiddleClick = { [weak self] row in
+            guard let item = self?.listContent.item(atRow: row) else { return }
+            self?.openInNewTab(item)
+        }
         tableView.selectableRows = { [weak self] rows in
             rows.filteredIndexSet { self?.listContent.item(atRow: $0) != nil }
         }
@@ -97,6 +106,10 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     // MARK: Delegate
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        ExplorerRowView()
+    }
+
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
         listContent.header(atRow: row) != nil
     }
@@ -155,6 +168,8 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         cell.identifier = identifier
         let textField = NSTextField(labelWithString: "")
         textField.lineBreakMode = .byTruncatingMiddle
+        textField.font = Theme.font(ofSize: 12)
+        textField.textColor = .secondaryLabelColor
         textField.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(textField)
         cell.textField = textField
@@ -217,7 +232,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// Widens `column` to fit its longest value (Windows' "Size column to fit").
     func sizeColumnToFit(_ column: FileColumn) {
         guard let tableColumn = tableView.tableColumn(withIdentifier: Self.identifier(column)) else { return }
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let font = Theme.font(ofSize: 12)
         let header = (column.title as NSString).size(withAttributes: [.font: font]).width + 24
         let widest = allItems.prefix(5000).reduce(header) { widest, item in
             let width = (text(for: column, item: item) as NSString).size(withAttributes: [.font: font]).width
@@ -247,6 +262,7 @@ final class NameCellView: NSTableCellView {
         let imageView = NSImageView()
         let textField = NSTextField(labelWithString: "")
         textField.lineBreakMode = .byTruncatingMiddle
+        textField.font = Theme.font(ofSize: 12)
         checkbox.target = self
         checkbox.action = #selector(toggle)
         checkbox.isHidden = true

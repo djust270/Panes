@@ -11,7 +11,7 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
         collectionView.allowsEmptySelection = true
-        collectionView.backgroundColors = [.controlBackgroundColor]
+        collectionView.backgroundColors = [Theme.bodyColor]
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(FileCollectionItem.self, forItemWithIdentifier: FileCollectionItem.identifier)
@@ -21,6 +21,11 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
             withIdentifier: GroupHeaderView.identifier
         )
         collectionView.onActivateSelection = { [weak self] in self?.activateSelection() }
+        collectionView.onTypeAhead = { [weak self] text in self?.typeAhead(text) ?? false }
+        collectionView.onMiddleClick = { [weak self] indexPath in
+            guard let item = self?.listContent.item(section: indexPath.section, index: indexPath.item) else { return }
+            self?.openInNewTab(item)
+        }
         collectionView.menu = makeContextMenu()
         configureCollectionDragAndDrop()
     }

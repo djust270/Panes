@@ -7,6 +7,8 @@ import ExplorerCore
 final class BreadcrumbBarView: NSView {
     var onNavigate: ((ExplorerLocation) -> Void)?
     var onNetworkPath: ((NetworkPath) -> Void)?
+    /// Editing the path ended (Return or Escape); focus should go back to the files.
+    var onEndEditing: (() -> Void)?
 
     private let scrollView = NSScrollView()
     private let stackView = NSStackView()
@@ -39,8 +41,10 @@ final class BreadcrumbBarView: NSView {
         scrollView.borderType = .noBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        pathField.isBordered = true
-        pathField.focusRingType = .default
+        pathField.isBordered = false
+        pathField.drawsBackground = false
+        pathField.focusRingType = .none
+        pathField.font = Theme.font(ofSize: 13)
         pathField.lineBreakMode = .byTruncatingHead
         pathField.isHidden = true
         pathField.delegate = self
@@ -55,9 +59,8 @@ final class BreadcrumbBarView: NSView {
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            pathField.topAnchor.constraint(equalTo: topAnchor),
-            pathField.bottomAnchor.constraint(equalTo: bottomAnchor),
-            pathField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            pathField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            pathField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             pathField.trailingAnchor.constraint(equalTo: trailingAnchor),
 
             stackView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
@@ -79,7 +82,7 @@ final class BreadcrumbBarView: NSView {
         beginEditing()
     }
 
-    private func beginEditing() {
+    func beginEditing() {
         guard let location, !isEditing else { return }
         isEditing = true
         pathField.stringValue = location.fileURL?.path ?? location.displayName
@@ -100,7 +103,7 @@ final class BreadcrumbBarView: NSView {
             onNetworkPath?(networkPath)
             return
         }
-        let path = (input.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+        let path = (FileNaming.unquotedPath(input) as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
             NSSound.beep()
@@ -115,6 +118,7 @@ final class BreadcrumbBarView: NSView {
         pathField.isHidden = true
         scrollView.isHidden = false
         rebuildSegments()
+        onEndEditing?()
     }
 
     private func rebuildSegments() {
@@ -138,12 +142,17 @@ final class BreadcrumbBarView: NSView {
         title.isBordered = false
         title.setButtonType(.momentaryPushIn)
         title.lineBreakMode = .byTruncatingTail
+        title.attributedTitle = NSAttributedString(string: ancestor.displayName, attributes: [
+            .font: Theme.font(ofSize: 13),
+            .foregroundColor: NSColor.labelColor,
+        ])
 
         let chevron = LocationButton(title: "", target: self, action: #selector(chevronClicked(_:)))
         chevron.location = ancestor
         chevron.isBordered = false
         chevron.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
         chevron.imagePosition = .imageOnly
+        chevron.contentTintColor = .secondaryLabelColor
         chevron.setButtonType(.momentaryPushIn)
 
         let container = NSStackView(views: [title, chevron])

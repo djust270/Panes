@@ -26,7 +26,11 @@ To work in Xcode, open `Package.swift`.
   `FileManager` fallback), `DirectoryWatcher` (FSEvents), `ExplorerLocation`, `NavigationHistory`, and the
   file-operation engine (`FileOperationTask`: copy/move/trash/delete/rename/create with conflicts, pause/cancel
   and undo inverses), `FileNaming`, `RecycleBin`, and the view model: `ViewMode`, `FileColumn`, `FileGrouper`,
-  `FileListContent`, `FolderViewSettingsStore` (per-folder view memory), `FilePropertiesReader`, `LRUCache`.
-  Must not import AppKit.
-- `Sources/ExplorerApp` — AppKit UI.
+  `FileListContent`, `FolderViewSettingsStore` (per-folder view memory), `FilePropertiesReader`, `LRUCache`,
+  and UI rules kept testable: `KeyboardScheme` (Windows/Mac shortcut tables), `TypeAheadSelector`, `FileKind`
+  (the Filter menu), `TabStripLayout`. Must not import AppKit.
+- `Sources/ExplorerApp` — AppKit UI. `ExplorerWindowController` owns the title-bar tab strip; each tab is an
+  `ExplorerTabController` (history, loading, commands) showing an `ExplorerRootViewController` (address bar,
+  command bar, panes, status bar). `Theme` and `AppSettings` hold the Windows 11 look and the Settings window's
+  preferences; `MainMenu` takes every shortcut from the keyboard scheme.
 - `Tests/ExplorerCoreTests` — Swift Testing suites.

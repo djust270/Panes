@@ -51,11 +51,11 @@ final class GroupHeaderView: NSView, NSCollectionViewElement {
         chevron.image = NSImage(systemSymbolName: symbol, accessibilityDescription: isCollapsed ? "Expand" : "Collapse")
         chevron.contentTintColor = .secondaryLabelColor
         let title = NSMutableAttributedString(string: group.title, attributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .font: Theme.font(ofSize: 12, weight: .semibold),
             .foregroundColor: NSColor.labelColor,
         ])
         title.append(NSAttributedString(string: " (\(group.items.count))", attributes: [
-            .font: NSFont.systemFont(ofSize: 12),
+            .font: Theme.font(ofSize: 12),
             .foregroundColor: NSColor.secondaryLabelColor,
         ]))
         titleButton.attributedTitle = title

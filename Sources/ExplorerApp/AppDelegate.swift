@@ -5,6 +5,17 @@ import ExplorerCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [ExplorerWindowController] = []
+    private var settingsObserver: NSObjectProtocol?
+    private var menuScheme: KeyboardScheme?
+
+    static var shared: AppDelegate {
+        NSApp.delegate as! AppDelegate // swiftlint:disable:this force_cast
+    }
+
+    /// Where new windows and tabs open. (Windows opens Home, which arrives in Phase 5.)
+    static var newTabLocation: ExplorerLocation {
+        .folder(FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL)
+    }
 
     static func main() {
         let app = NSApplication.shared
@@ -16,9 +27,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.make()
-        openWindow(at: .folder(FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL))
+        NSWindow.allowsAutomaticWindowTabbing = false
+        settingsObserver = AppSettings.observe { [weak self] in self?.applySettings() }
+        KeyboardShortcuts.installEventMonitors()
+        openWindow(at: Self.newTabLocation)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Rebuilds the menu bar when the keyboard scheme changes, and applies the theme.
+    private func applySettings() {
+        Theme.applyAppearance()
+        let scheme = AppSettings.keyboardScheme
+        guard scheme != menuScheme else { return }
+        menuScheme = scheme
+        NSApp.mainMenu = MainMenu.make()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -57,27 +79,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    // MARK: Commands
+
     @objc func newWindow(_ sender: Any?) {
-        let location = activeWindowController?.history.current
-            ?? .folder(FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL)
-        openWindow(at: location)
+        openWindow(at: Self.newTabLocation)
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        SettingsWindowController.shared.showWindow(nil)
     }
 
     @objc func toggleHiddenFiles(_ sender: Any?) {
-        guard let controller = activeWindowController else { return }
-        controller.setShowsHiddenFiles(!controller.showsHiddenFiles)
+        AppSettings.showsHiddenFiles.toggle()
     }
 
-    @objc func refresh(_ sender: Any?) {
-        activeWindowController?.refresh()
+    @objc func toggleCompactView(_ sender: Any?) {
+        AppSettings.compactView.toggle()
     }
 
-    private var activeWindowController: ExplorerWindowController? {
-        windowControllers.first { $0.window == NSApp.keyWindow }
+    // MARK: Windows
+
+    func openWindow(at location: ExplorerLocation) {
+        show(ExplorerWindowController(location: location))
     }
 
-    private func openWindow(at location: ExplorerLocation) {
-        let controller = ExplorerWindowController(location: location)
+    /// Opens a window for a tab dragged out of another window.
+    func openWindow(with tab: ExplorerTabController, frame: NSRect) {
+        show(ExplorerWindowController(tabs: [tab], frame: frame))
+    }
+
+    private func show(_ controller: ExplorerWindowController) {
         windowControllers.append(controller)
         controller.onClose = { [weak self, weak controller] in
             self?.windowControllers.removeAll { $0 === controller }
@@ -88,8 +119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleHiddenFiles(_:)) {
-            menuItem.state = (activeWindowController?.showsHiddenFiles ?? false) ? .on : .off
+        switch menuItem.action {
+        case #selector(toggleHiddenFiles(_:)):
+            menuItem.state = AppSettings.showsHiddenFiles ? .on : .off
+        case #selector(toggleCompactView(_:)):
+            menuItem.state = AppSettings.compactView ? .on : .off
+        default:
+            break
         }
         return true
     }

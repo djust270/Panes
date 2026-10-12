@@ -6,9 +6,11 @@ import ExplorerCore
 @MainActor
 final class NavigationPaneViewController: NSViewController {
     var onSelect: ((ExplorerLocation) -> Void)?
+    /// "Open in new tab" or middle-click on a location.
+    var onOpenInNewTab: ((ExplorerLocation) -> Void)?
     weak var dropHandler: FileDropHandling?
 
-    private let outlineView = NSOutlineView()
+    private let outlineView = NavigationOutlineView()
     private let scrollView = NSScrollView()
     private var childrenCache: [String: [SidebarItem]] = [:]
     /// Set while `select(_:)` is driving the selection programmatically, so
@@ -20,8 +22,17 @@ final class NavigationPaneViewController: NSViewController {
         outlineView.addTableColumn(column)
         outlineView.outlineTableColumn = column
         outlineView.headerView = nil
-        outlineView.style = .sourceList
-        outlineView.rowSizeStyle = .default
+        outlineView.style = .plain
+        outlineView.backgroundColor = Theme.bodyColor
+        outlineView.rowSizeStyle = .custom
+        outlineView.rowHeight = Theme.navigationRowHeight
+        outlineView.intercellSpacing = NSSize(width: 0, height: 0)
+        outlineView.indentationPerLevel = 14
+        outlineView.menu = makeContextMenu()
+        outlineView.onMiddleClick = { [weak self] row in
+            guard let self, let location = location(atRow: row) else { return }
+            onOpenInNewTab?(location)
+        }
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.autosaveExpandedItems = true
@@ -175,6 +186,8 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
             cell.imageView = imageView
 
             let textField = NSTextField(labelWithString: "")
+            textField.font = Theme.font(ofSize: 12)
+            textField.lineBreakMode = .byTruncatingTail
             textField.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(textField)
             cell.textField = textField
@@ -196,10 +209,76 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
         return cell
     }
 
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        let row = ExplorerRowView()
+        row.usesNeutralSelection = true
+        return row
+    }
+
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard !isProgrammaticSelection else { return }
         let row = outlineView.selectedRow
         guard row >= 0, let item = outlineView.item(atRow: row) as? SidebarItem else { return }
         onSelect?(item.location)
+    }
+}
+
+// MARK: - Context menu, theme
+
+extension NavigationPaneViewController: NSMenuDelegate {
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        return menu
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let location = location(atRow: outlineView.clickedRow) else { return }
+        let newTab = menu.addItem(withTitle: "Open in new tab", action: #selector(openInNewTab(_:)), keyEquivalent: "")
+        newTab.target = self
+        newTab.representedObject = location
+        let newWindow = menu.addItem(withTitle: "Open in new window", action: #selector(openInNewWindow(_:)),
+                                     keyEquivalent: "")
+        newWindow.target = self
+        newWindow.representedObject = location
+    }
+
+    fileprivate func location(atRow row: Int) -> ExplorerLocation? {
+        guard row >= 0 else { return nil }
+        return (outlineView.item(atRow: row) as? SidebarItem)?.location
+    }
+
+    @objc private func openInNewTab(_ sender: NSMenuItem) {
+        guard let location = sender.representedObject as? ExplorerLocation else { return }
+        onOpenInNewTab?(location)
+    }
+
+    @objc private func openInNewWindow(_ sender: NSMenuItem) {
+        guard let location = sender.representedObject as? ExplorerLocation else { return }
+        AppDelegate.shared.openWindow(at: location)
+    }
+
+    /// Re-applies Compact view and colours after settings change.
+    func applyTheme() {
+        guard isViewLoaded else { return }
+        outlineView.rowHeight = Theme.navigationRowHeight
+        outlineView.backgroundColor = Theme.bodyColor
+        outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outlineView.numberOfRows))
+        outlineView.needsDisplay = true
+    }
+}
+
+/// The navigation pane's outline: middle-click opens a location in a new tab.
+final class NavigationOutlineView: NSOutlineView {
+    var onMiddleClick: ((Int) -> Void)?
+
+    override func otherMouseUp(with event: NSEvent) {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        if event.buttonNumber == 2, row >= 0 {
+            onMiddleClick?(row)
+        } else {
+            super.otherMouseUp(with: event)
+        }
     }
 }

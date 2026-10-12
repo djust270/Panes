@@ -75,7 +75,7 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
 - Copies use `copyfile(3)` (APFS clones when possible); replacements are copied beside the original and swapped in,
   so a cancelled replace keeps the old file.
 - Operations run concurrently (as on Windows), each on its own thread, rather than strictly queued.
-- Undo/redo is app-wide (`UndoManager`), ⌘Z / ⇧⌘Z for now; Ctrl+Z / Ctrl+Y arrive with Phase 4's keyboard scheme.
+- Undo/redo is app-wide (`UndoManager`); Ctrl+Z / Ctrl+Y came with Phase 4's keyboard scheme.
   Undoing a copy or a new item moves it to the Trash; replaced files are not restored.
 - Recycle Bin reads `~/.Trash` and per-volume `.Trashes/<uid>`. Restore uses Finder's "Put Back" records from the
   Trash's `.DS_Store` and this app's own log. Listing `~/.Trash` requires Full Disk Access (Phase 7 onboarding);
@@ -118,12 +118,49 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
   ⌘-click and ⇧-click work now.
 
 ## Phase 4 — Windows 11 look (~2–3 weeks)
-- Mica-style translucent background, Windows 11 corner radii & spacing, optional custom caption bar (min/max/close on the right)
-- **Tabs** in the title bar (new, close, reorder, drag tab out to new window)
-- **Command bar**: New ▾, Cut, Copy, Paste, Rename, Share, Delete, Sort ▾, View ▾, Filter, ⋯
-- **Context menu**: Windows 11 compact icon row + "Show more options" (Open with, Send to, Compress to ZIP, Copy as path, Properties)
-- **Keyboard scheme** setting: Windows (Ctrl-based) vs Mac (Cmd-based); F2, F5, Alt+←/→/↑, Ctrl+L, Ctrl+N, Ctrl+Shift+N, Ctrl+T/W, Backspace = Up, type-ahead select
-- Light / dark modes, Windows accent colours
+- [ ] Mica-style translucent background, Windows 11 corner radii & spacing, optional custom caption bar (min/max/close on the right)
+- [ ] **Tabs** in the title bar (new, close, reorder, drag tab out to new window)
+- [ ] **Command bar**: New ▾, Cut, Copy, Paste, Rename, Share, Delete, Sort ▾, View ▾, Filter, ⋯
+- [ ] **Context menu**: Windows 11 compact icon row + "Show more options" (Open with, Send to, Compress to ZIP, Copy as path, Properties)
+- [ ] **Keyboard scheme** setting: Windows (Ctrl-based) vs Mac (Cmd-based); F2, F5, Alt+←/→/↑, Ctrl+L, Ctrl+N, Ctrl+Shift+N, Ctrl+T/W, Backspace = Back, type-ahead select
+- [ ] Light / dark modes, Windows accent colours
+- [ ] Ctrl+click toggles selection (Windows scheme), carried over from Phase 3
+- [ ] Fluent UI System Icons — not started; SF Symbols for now
+
+**Status: implemented, not yet checked by hand.** Driven by a temporary in-app self-test (tabs, shortcuts with real
+key events, context menu, type-ahead, Ctrl+click, detaching and moving tabs, settings); the visual look still
+needs checking by eye.
+- Layout: title-bar tab strip; then the address bar and command bar on a lighter header layer; then the panes on a
+  solid body. The window background is a behind-window `NSVisualEffectView` (closest macOS match to Mica: tinted by
+  the wallpaper, solid when inactive). No `NSToolbar`: a toolbar swallows clicks in the title bar, so the strip sits
+  in the content view under the transparent title bar and the traffic lights are moved down to centre on it.
+- Tabs: each tab is an `ExplorerTabController` with its own history, panes and view; the window forwards commands
+  to the selected tab. New (Ctrl+T, +), close (Ctrl+W, ×, middle-click), Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+1…9,
+  reorder by dragging, drag onto another window's strip to move it, drop anywhere else for a new window. Tab context
+  menu: duplicate, move to new window, close others / to the right. Folders open in a new tab by middle-click or
+  "Open in new tab" (content and navigation pane). Hovering a file drag over a tab switches to it. New tabs open the
+  home folder until Phase 5's Home page.
+- Caption buttons: Settings › "Window buttons on the right" swaps the traffic lights for Windows-style minimise /
+  maximise / close (off by default).
+- Command bar: New ▾ | Cut, Copy, Paste, Rename, Share, Delete | Sort ▾, View ▾ (layouts, Compact view, Show ▸) |
+  Filter ▾ (Folders, Documents, Pictures, Music, Videos, Compressed, Applications; per tab, cleared on navigation)
+  | ⋯, with Details on the right. Buttons validate like menu items; Share, Filter and separators drop out first
+  when narrow.
+- Context menu: icon row (Cut, Copy, Rename, Share, Delete), Open, Open in new tab / window, Open with ▸,
+  Compress to ZIP file (`ditto` for one item, `zip` for several; no undo yet), Copy as path (quoted, one per line;
+  the address bar accepts quoted paths), Show more options ▸ (Send to ▸ Desktop / Documents / Downloads / Mail /
+  external drives, Cut, Copy, Delete, Rename). Properties waits for Phase 6's dialog.
+- Keyboard: `KeyboardScheme` (ExplorerCore) holds both tables; menus are rebuilt when the scheme changes. The
+  Windows scheme (default) shows Ctrl keys and keeps every ⌘ shortcut as a hidden alternate; the Mac scheme adds
+  only F2/F5. Undo/Redo are Ctrl+Z / Ctrl+Y. Backspace goes **Back** (Windows Vista and later), not Up; Alt+↑ is
+  Up. Layouts are Ctrl+Shift+1…8 under the Windows scheme, ⌘1…8 under the Mac one. AppKit's key-equivalent matching
+  breaks with Shift (Ctrl+Shift+1 misses "⌃⇧1", plain Ctrl+1 *hits* it, Ctrl+Shift+N misses "⌃⇧N"), so a key
+  monitor looks up any shortcut with Shift, or with a digit or symbol, by unshifted key and exact modifiers.
+  Type-ahead works in every layout (repeat a letter to cycle). Del deletes, Shift+Del deletes permanently.
+- Theme: Light / Dark / system; accent from Windows' palette or "Match macOS", used for selection, focus marks and
+  tabs. Lists use Windows 11's rounded, lightly tinted selection with hover highlight; the navigation pane uses a
+  neutral grey. Compact view tightens Details and navigation rows (30 → 22 pt). Segoe UI is used if installed.
+- Hidden items and the navigation pane are now app-wide settings, as on Windows.
 
 ## Phase 5 — Home, Quick Access & Search (~2 weeks)
 - Home page: Quick Access tiles (pinned + frequent folders), Favorites, Recent files (Spotlight + app history)

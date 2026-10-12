@@ -40,6 +40,26 @@ public enum FileNaming {
         return numbered(name, number, hasExtension: hasExtension)
     }
 
+    /// Windows' "Compress to ZIP file" name: the item's name without its extension, plus ".zip".
+    public static func zipName(for name: String, hasExtension: Bool = true) -> String {
+        let stem = split(name, hasExtension: hasExtension).stem
+        return (stem.isEmpty ? name : stem) + ".zip"
+    }
+
+    /// Windows' "Copy as path": each path in double quotes, one per line.
+    public static func quotedPaths(_ urls: [URL]) -> String {
+        urls.map { "\"\($0.path)\"" }.joined(separator: "\n")
+    }
+
+    /// A path typed or pasted into the address bar, without surrounding quotes or spaces.
+    public static func unquotedPath(_ text: String) -> String {
+        var path = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if path.count >= 2, path.hasPrefix("\""), path.hasSuffix("\"") {
+            path = String(path.dropFirst().dropLast())
+        }
+        return path
+    }
+
     /// The name for a copy made in the original's own folder: "report - Copy.txt", then
     /// "report - Copy (2).txt", and so on.
     public static func copyName(for name: String, hasExtension: Bool = true, isTaken: (String) -> Bool) -> String {

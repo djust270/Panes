@@ -1,10 +1,10 @@
 import AppKit
 import ExplorerCore
 
-/// File commands (menus, context menu, keyboard) and drop handling for one window. The
+/// File commands (menus, context menu, keyboard) and drop handling for one tab. The
 /// operations themselves run in `FileOperationCenter`.
-extension ExplorerWindowController {
-    private var selectedURLs: [URL] { content.selectedItems.map(\.url) }
+extension ExplorerTabController {
+    var selectedURLs: [URL] { content.selectedItems.map(\.url) }
 
     // MARK: Commands
 
@@ -188,34 +188,11 @@ extension ExplorerWindowController {
             : "Are you sure you want to permanently delete these \(urls.count) items?"
         return await confirm(message, detail: "You can’t undo this action.", button: "Delete")
     }
-
-    private func confirm(_ message: String, detail: String, button: String, cancel: String = "Cancel") async -> Bool {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.informativeText = detail
-        alert.addButton(withTitle: button)
-        alert.addButton(withTitle: cancel)
-        return await present(alert) == .alertFirstButtonReturn
-    }
-
-    private func inform(_ message: String) async {
-        let alert = NSAlert()
-        alert.messageText = message
-        await present(alert)
-    }
-
-    @discardableResult
-    private func present(_ alert: NSAlert) async -> NSApplication.ModalResponse {
-        guard let window else { return alert.runModal() }
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
-        }
-    }
 }
 
 // MARK: Validation
 
-extension ExplorerWindowController: NSMenuItemValidation {
+extension ExplorerTabController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let selection = content.selectedItems
         let location = history.current
@@ -240,14 +217,14 @@ extension ExplorerWindowController: NSMenuItemValidation {
         case #selector(restoreAll(_:)), #selector(emptyRecycleBin(_:)):
             return inRecycleBin && !content.allItems.isEmpty
         default:
-            return validateViewMenuItem(menuItem) ?? true
+            return validateViewMenuItem(menuItem) ?? validateCommandMenuItem(menuItem) ?? true
         }
     }
 }
 
 // MARK: Drag and drop
 
-extension ExplorerWindowController: FileDropHandling {
+extension ExplorerTabController: FileDropHandling {
     /// Windows' Ctrl = copy and Shift = move, plus the Mac's Option = copy and Command = move.
     private static var currentIntent: DropPolicy.Intent {
         let flags = NSEvent.modifierFlags

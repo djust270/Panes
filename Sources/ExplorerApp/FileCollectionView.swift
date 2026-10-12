@@ -6,12 +6,23 @@ import ExplorerCore
 /// which item a context menu was opened on.
 final class FileCollectionView: NSCollectionView {
     var onActivateSelection: (() -> Void)?
+    var onTypeAhead: ((String) -> Bool)?
+    /// Middle-click on an item.
+    var onMiddleClick: ((IndexPath) -> Void)?
     /// The item under the last right-click, or `nil` for the background.
     private(set) var clickedIndexPath: IndexPath?
 
     override func keyDown(with event: NSEvent) {
-        if !FileViewKeys.handle(event, from: self, activate: onActivateSelection) {
+        if !FileViewKeys.handle(event, from: self, activate: onActivateSelection, typeAhead: onTypeAhead) {
             super.keyDown(with: event)
+        }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        if event.buttonNumber == 2, let indexPath = indexPathForItem(at: convert(event.locationInWindow, from: nil)) {
+            onMiddleClick?(indexPath)
+        } else {
+            super.otherMouseUp(with: event)
         }
     }
 

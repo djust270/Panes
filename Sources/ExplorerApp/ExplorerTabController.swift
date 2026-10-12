@@ -1,0 +1,372 @@
+import AppKit
+import ExplorerCore
+
+/// What a tab asks of the window holding it.
+@MainActor
+protocol TabHosting: AnyObject {
+    /// The tab's title or icon changed.
+    func tabDidChangeTitle(_ tab: ExplorerTabController)
+    /// Opens `location` in a new tab next to `tab`.
+    func openTab(at location: ExplorerLocation, besides tab: ExplorerTabController, select: Bool)
+}
+
+/// One Explorer tab. Owns the navigation history, loads and watches the current location,
+/// and coordinates the navigation pane, address and command bars, content view and status
+/// bar. Sits in the responder chain while its tab is showing, so menu commands reach it.
+/// File commands live in `ExplorerTabController+FileActions.swift`, view commands in
+/// `ExplorerTabController+View.swift`.
+@MainActor
+final class ExplorerTabController: NSViewController {
+    private(set) var history: NavigationHistory
+    weak var host: TabHosting?
+
+    let rootViewController = ExplorerRootViewController()
+    private var loader = DirectoryLoader()
+    private var loadTask: Task<Void, Never>?
+    private var watchTasks: [Task<Void, Never>] = []
+    private var watchers: [DirectoryWatcher] = []
+    private var observers: [NSObjectProtocol] = []
+
+    var content: ContentViewController { rootViewController.content }
+    var addressBar: AddressBarView { rootViewController.addressBar }
+    var commandBar: CommandBarView { rootViewController.commandBar }
+
+    /// The tab strip's icon for the current location.
+    private(set) var icon = NSImage()
+
+    init(location: ExplorerLocation) {
+        history = NavigationHistory(start: location)
+        super.init(nibName: nil, bundle: nil)
+        loader.options.includeHidden = AppSettings.showsHiddenFiles
+        title = location.displayName
+        icon = Self.icon(for: location)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func loadView() {
+        addChild(rootViewController)
+        let container = NSView()
+        let root = rootViewController.view
+        root.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(root)
+        NSLayoutConstraint.activate([
+            root.topAnchor.constraint(equalTo: container.topAnchor),
+            root.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            root.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        view = container
+        connectCallbacks()
+        show(history.current)
+    }
+
+    private func connectCallbacks() {
+        content.onNavigate = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        content.onOpenInNewTab = { [weak self] location in
+            guard let self else { return }
+            host?.openTab(at: location, besides: self, select: false)
+        }
+        content.onSelectionChange = { [weak self] in
+            self?.updateStatusBar()
+            self?.updateSidePane()
+        }
+        connectViewCallbacks()
+        content.onRename = { [weak self] item, name in
+            self?.rename(item, to: name)
+        }
+        content.dropHandler = self
+        content.cutURLs = FileClipboard.shared.cutURLs
+        rootViewController.navigationPane.onSelect = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        rootViewController.navigationPane.onOpenInNewTab = { [weak self] location in
+            guard let self else { return }
+            host?.openTab(at: location, besides: self, select: false)
+        }
+        rootViewController.navigationPane.dropHandler = self
+        commandBar.target = self
+        connectAddressBar()
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: FileClipboard.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.content.cutURLs = FileClipboard.shared.cutURLs
+                self?.commandBar.validate()
+            }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: AppSettings.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.settingsDidChange() }
+        })
+    }
+
+    private func connectAddressBar() {
+        addressBar.onNavigate = { [weak self] location in
+            self?.navigate(to: location)
+        }
+        addressBar.onNetworkPath = { [weak self] path in
+            self?.connect(to: path)
+        }
+        addressBar.onGoBack = { [weak self] steps in
+            self?.goBack(steps: steps)
+        }
+        addressBar.onGoForward = { [weak self] steps in
+            self?.goForward(steps: steps)
+        }
+        addressBar.onUp = { [weak self] in self?.navigateUp() }
+        addressBar.onEndEditing = { [weak self] in self?.focusContent() }
+        addressBar.onRefresh = { [weak self] in self?.reload() }
+        addressBar.backList = { [weak self] in self?.history.backList ?? [] }
+        addressBar.forwardList = { [weak self] in self?.history.forwardList ?? [] }
+    }
+
+    private func connectViewCallbacks() {
+        content.onSettingsChange = { [weak self] settings in
+            guard let self else { return }
+            FolderViewMemory.store.save(settings, for: history.current)
+            rootViewController.statusBar.setViewMode(settings.viewMode)
+            commandBar.validate()
+        }
+        rootViewController.statusBar.onViewMode = { [weak self] mode in
+            self?.setViewMode(mode)
+        }
+    }
+
+    private func settingsDidChange() {
+        if loader.options.includeHidden != AppSettings.showsHiddenFiles {
+            loader.options.includeHidden = AppSettings.showsHiddenFiles
+            reload()
+        }
+        content.applyTheme()
+        rootViewController.navigationPane.applyTheme()
+        commandBar.validate()
+    }
+
+    // MARK: Navigation
+
+    func navigate(to location: ExplorerLocation) {
+        history.navigate(to: location)
+        show(location)
+    }
+
+    func goBack(steps: Int) {
+        guard let destination = history.goBack(steps: steps) else { return }
+        show(destination)
+    }
+
+    func goForward(steps: Int) {
+        guard let destination = history.goForward(steps: steps) else { return }
+        show(destination)
+    }
+
+    /// Mounts a network share typed into the address bar, then opens it.
+    func connect(to path: NetworkPath) {
+        rootViewController.statusBar.text = "Connecting to \(path.shareURL.absoluteString)…"
+        Task {
+            switch await NetworkShareMounter.mount(path) {
+            case .mounted(let folder):
+                navigate(to: .folder(folder))
+            case .cancelled:
+                updateStatusBar()
+            case .failed(let message):
+                updateStatusBar()
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Couldn’t connect to “\(path.shareURL.absoluteString)”"
+                alert.informativeText = message
+                await present(alert)
+            }
+        }
+    }
+
+    func navigateUp() {
+        guard let parent = history.current.parent else { return }
+        navigate(to: parent)
+    }
+
+    /// The real folder being shown, if any (not This PC, Home, Recycle Bin…).
+    var currentFolder: URL? { history.current.fileURL }
+
+    private func show(_ location: ExplorerLocation) {
+        title = location.displayName
+        icon = Self.icon(for: location)
+        host?.tabDidChangeTitle(self)
+        let mode: ContentViewController.Mode
+        switch location {
+        case .recycleBin: mode = .recycleBin
+        case .thisPC: mode = .volumes
+        default: mode = .folder
+        }
+        let settings = FolderViewMemory.store.settings(for: location)
+        content.show(mode: mode, settings: settings)
+        rootViewController.statusBar.setViewMode(content.settings.viewMode)
+        rootViewController.navigationPane.select(location)
+        addressBar.update(location: location, history: history)
+        reload()
+        watch(location)
+    }
+
+    private static func icon(for location: ExplorerLocation) -> NSImage {
+        let image: NSImage?
+        switch location {
+        case .folder(let url): image = NSWorkspace.shared.icon(forFile: url.path)
+        case .home: image = NSImage(systemSymbolName: "house", accessibilityDescription: nil)
+        case .thisPC: image = NSImage(systemSymbolName: "desktopcomputer", accessibilityDescription: nil)
+        case .network: image = NSImage(systemSymbolName: "network", accessibilityDescription: nil)
+        case .recycleBin: image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+        case .search: image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        }
+        return image ?? NSImage()
+    }
+
+    func reload() {
+        loadTask?.cancel()
+
+        switch history.current {
+        case .thisPC:
+            let items = VolumeLister.mountedVolumes().map { volume in
+                FileItem(url: volume.url.standardizedFileURL, name: volume.name, kind: .directory)
+            }
+            content.setItems(items)
+            updateStatusBar()
+        case .recycleBin:
+            loadRecycleBin()
+        case .folder(let url):
+            loadTask = Task { [weak self, loader] in
+                do {
+                    let items = try await loader.contents(of: url)
+                    guard !Task.isCancelled else { return }
+                    self?.content.setItems(items)
+                    self?.updateStatusBar()
+                } catch is CancellationError {
+                    // Superseded by a newer load.
+                } catch {
+                    self?.rootViewController.statusBar.text = error.localizedDescription
+                }
+            }
+        case .home, .network, .search:
+            content.showUnavailable("\(history.current.displayName) isn't available yet.")
+            rootViewController.statusBar.text = ""
+            commandBar.validate()
+        }
+    }
+
+    private func loadRecycleBin() {
+        let includeHidden = loader.options.includeHidden
+        loadTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try RecycleBin.contents(includeHidden: includeHidden) }
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            switch result {
+            case .success(let items):
+                content.setItems(items)
+                updateStatusBar()
+            case .failure(is RecycleBin.AccessDenied):
+                content.showUnavailable(
+                    "Explorer needs Full Disk Access to show the Recycle Bin.\n"
+                        + "Turn it on in System Settings › Privacy & Security › Full Disk Access."
+                )
+                rootViewController.statusBar.text = ""
+            case .failure(let error):
+                rootViewController.statusBar.text = error.localizedDescription
+            }
+        }
+    }
+
+    func updateStatusBar() {
+        let selected = content.selectedItems
+        let selectedSize: Int64? = selected.allSatisfy(\.isFolder)
+            ? nil
+            : selected.reduce(0) { $0 + ($1.size ?? 0) }
+        var text = StatusBarText.make(
+            totalCount: content.allItems.count,
+            selectedCount: selected.count,
+            selectedSizeBytes: selectedSize
+        )
+        if !content.kindFilter.isEmpty {
+            text += "  |  Filtered"
+        }
+        rootViewController.statusBar.text = text
+        commandBar.validate()
+    }
+
+    private func watch(_ location: ExplorerLocation) {
+        stopWatching()
+
+        let directories: [URL]
+        switch location {
+        case .folder(let url): directories = [url]
+        case .recycleBin: directories = RecycleBin.trashDirectories()
+        default: directories = []
+        }
+        watchers = directories.map { DirectoryWatcher(directory: $0) }
+        watchTasks = watchers.map { watcher in
+            let changes = watcher.start()
+            return Task { [weak self] in
+                for await _ in changes {
+                    self?.reload()
+                }
+            }
+        }
+    }
+
+    private func stopWatching() {
+        watchTasks.forEach { $0.cancel() }
+        watchers.forEach { $0.stop() }
+        watchTasks = []
+        watchers = []
+    }
+
+    /// Puts keyboard focus in the file list (after the tab is shown).
+    func focusContent() {
+        view.window?.makeFirstResponder(content.activeView)
+    }
+
+    /// Stops loading and watching, for good. Called when the tab closes.
+    func close() {
+        content.finishRenaming(commit: true)
+        loadTask?.cancel()
+        stopWatching()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+    }
+
+    // MARK: Alerts
+
+    func confirm(_ message: String, detail: String, button: String, cancel: String = "Cancel") async -> Bool {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.addButton(withTitle: button)
+        alert.addButton(withTitle: cancel)
+        return await present(alert) == .alertFirstButtonReturn
+    }
+
+    func inform(_ message: String) async {
+        let alert = NSAlert()
+        alert.messageText = message
+        await present(alert)
+    }
+
+    /// Shows `alert` as a sheet on the tab's window, or as a panel if the tab isn't showing.
+    @discardableResult
+    func present(_ alert: NSAlert) async -> NSApplication.ModalResponse {
+        guard let window = view.window else { return alert.runModal() }
+        return await withCheckedContinuation { continuation in
+            alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+        }
+    }
+}

@@ -106,7 +106,7 @@ final class FileItemView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         iconView.imageScaling = .scaleProportionallyUpOrDown
-        nameField.font = .systemFont(ofSize: 12)
+        nameField.font = Theme.font(ofSize: 12)
         nameField.cell?.truncatesLastVisibleLine = true
         checkbox.isHidden = true
         for subview in [iconView, nameField, line2, line3, right1, right2, checkbox] {
@@ -129,7 +129,7 @@ final class FileItemView: NSView {
 
     private static func detailLabel() -> NSTextField {
         let label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 11)
+        label.font = Theme.font(ofSize: 11)
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         return label
@@ -194,13 +194,13 @@ final class FileItemView: NSView {
         let highlight = bounds.insetBy(dx: 1, dy: 1)
         let path = NSBezierPath(roundedRect: highlight, xRadius: 4, yRadius: 4)
         if isDropTarget {
-            NSColor.controlAccentColor.withAlphaComponent(0.35).setFill()
+            Theme.accent.withAlphaComponent(0.35).setFill()
             path.fill()
         } else if isSelected {
-            NSColor.controlAccentColor.withAlphaComponent(isHovered ? 0.32 : 0.25).setFill()
+            Theme.selectionColor(emphasized: true, hovered: isHovered).setFill()
             path.fill()
         } else if isHovered {
-            NSColor.labelColor.withAlphaComponent(0.06).setFill()
+            Theme.hoverColor.setFill()
             path.fill()
         }
         if viewMode == .content {

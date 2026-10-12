@@ -1,7 +1,8 @@
 import AppKit
 import ExplorerCore
 
-/// Builds the menu bar in code (there is no nib/storyboard in a SwiftPM app).
+/// Builds the menu bar in code (there is no nib/storyboard in a SwiftPM app). Shortcuts come
+/// from the keyboard scheme; the menu bar is rebuilt when the scheme changes.
 @MainActor
 enum MainMenu {
     static func make() -> NSMenu {
@@ -10,6 +11,7 @@ enum MainMenu {
         mainMenu.addItem(submenu: fileMenu())
         mainMenu.addItem(submenu: editMenu())
         mainMenu.addItem(submenu: viewMenu())
+        mainMenu.addItem(submenu: goMenu())
 
         let window = windowMenu()
         mainMenu.addItem(submenu: window)
@@ -31,7 +33,7 @@ enum MainMenu {
         menu.addItem(withTitle: "About \(appName)",
                      action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: nil, keyEquivalent: ",")
+        menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         menu.addItem(.separator())
         let services = NSMenu(title: "Services")
         menu.addItem(submenu: services)
@@ -48,81 +50,96 @@ enum MainMenu {
         return menu
     }
 
-    /// Key equivalents for keys without a printable character.
-    static let f2Key = String(UnicodeScalar(UInt16(NSF2FunctionKey)).map(Character.init) ?? " ")
-    static let backspaceKey = "\u{8}"
-
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
-        menu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
-        menu.addItem(newSubmenuItem())
+        menu.add("New Window", #selector(AppDelegate.newWindow(_:)), command: .newWindow, alternates: true)
+        menu.add("New Tab", #selector(ExplorerWindowController.newTab(_:)), command: .newTab, alternates: true)
+        let new = NSMenu(title: "New")
+        for item in newItems(alternates: true) { new.addItem(item) }
+        menu.addItem(submenu: new)
         menu.addItem(.separator())
-        menu.add("Open", #selector(ExplorerWindowController.openSelection(_:)), key: "o")
+        menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open, alternates: true)
+        menu.add("Open in New Tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
+        menu.add("Open in New Window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
         menu.addItem(.separator())
-        menu.add("Restore", #selector(ExplorerWindowController.restoreSelection(_:)))
-        menu.add("Empty Recycle Bin…", #selector(ExplorerWindowController.emptyRecycleBin(_:)))
+        menu.add("Compress to ZIP File", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        menu.add("Restore", #selector(ExplorerTabController.restoreSelection(_:)))
+        menu.add("Empty Recycle Bin…", #selector(ExplorerTabController.emptyRecycleBin(_:)))
+        menu.addItem(.separator())
+        menu.add("Close Tab", #selector(ExplorerWindowController.closeTab(_:)), command: .closeTab, alternates: true)
+        menu.add("Close Window", #selector(NSWindow.performClose(_:)), key: "w", modifiers: [.command, .shift])
         return menu
     }
 
-    /// "New ▸ Folder / Text Document", shared by the File menu and the background context menu.
+    /// "Folder / Text Document", for File › New, the command bar's New ▾ and the background
+    /// context menu.
+    static func newItems(alternates: Bool = false) -> [NSMenuItem] {
+        let menu = NSMenu()
+        menu.add("Folder", #selector(ExplorerTabController.newFolder(_:)), command: .newFolder, alternates: alternates)
+        menu.add("Text Document", #selector(ExplorerTabController.newTextDocument(_:)), command: .newTextDocument,
+                 alternates: alternates)
+        return menu.detachItems()
+    }
+
+    /// "New ▸", for the background context menu.
     static func newSubmenuItem() -> NSMenuItem {
         let submenu = NSMenu(title: "New")
-        submenu.add("Folder", #selector(ExplorerWindowController.newFolder(_:)), key: "n",
-                    modifiers: [.command, .shift])
-        submenu.add("Text Document", #selector(ExplorerWindowController.newTextDocument(_:)), key: "n",
-                    modifiers: [.command, .option])
-        let item = NSMenuItem(title: "New", action: nil, keyEquivalent: "")
-        item.submenu = submenu
-        return item
+        newItems().forEach(submenu.addItem)
+        return submenuItem(submenu)
     }
 
     private static func editMenu() -> NSMenu {
         let menu = NSMenu(title: "Edit")
-        menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        menu.add("Undo", Selector(("undo:")), command: .undo, alternates: true)
+        menu.add("Redo", Selector(("redo:")), command: .redo, alternates: true)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.add("Cut", #selector(NSText.cut(_:)), command: .cut, alternates: true)
+        menu.add("Copy", #selector(NSText.copy(_:)), command: .copy, alternates: true)
+        menu.add("Paste", #selector(NSText.paste(_:)), command: .paste, alternates: true)
+        menu.add("Copy as Path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath,
+                 alternates: true)
         menu.addItem(.separator())
-        menu.add("Rename", #selector(ExplorerWindowController.renameSelection(_:)), key: f2Key, modifiers: [])
-        menu.add("Delete", #selector(ExplorerWindowController.delete(_:)), key: backspaceKey)
-        menu.add("Delete Permanently…", #selector(ExplorerWindowController.deletePermanently(_:)), key: backspaceKey,
-                 modifiers: [.command, .option])
+        menu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename, alternates: true)
+        menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete, alternates: true)
+        menu.add("Delete Permanently…", #selector(ExplorerTabController.deletePermanently(_:)),
+                 command: .deletePermanently, alternates: true)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        menu.add("Select None", #selector(ExplorerWindowController.selectNone(_:)), key: "a",
-                 modifiers: [.command, .option])
-        menu.add("Invert Selection", #selector(ExplorerWindowController.invertSelection(_:)), key: "i",
-                 modifiers: [.command, .shift])
+        menu.add("Select All", #selector(NSText.selectAll(_:)), command: .selectAll, alternates: true)
+        menu.add("Select None", #selector(ExplorerTabController.selectNone(_:)), command: .selectNone,
+                 alternates: true)
+        menu.add("Invert Selection", #selector(ExplorerTabController.invertSelection(_:)),
+                 command: .invertSelection, alternates: true)
         return menu
     }
 
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
-        viewModeItems().forEach(menu.addItem)
+        viewModeItems(alternates: true).forEach(menu.addItem)
         menu.addItem(.separator())
         menu.addItem(sortBySubmenuItem())
         menu.addItem(groupBySubmenuItem())
+        let filter = NSMenu(title: "Filter")
+        filterItems().forEach(filter.addItem)
+        menu.addItem(submenuItem(filter))
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Show Navigation Pane",
-                     action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
-            .keyEquivalentModifierMask = [.command, .control]
-        menu.add("Preview Pane", #selector(ExplorerWindowController.togglePreviewPane(_:)), key: "p",
-                 modifiers: [.command, .option])
-        menu.add("Details Pane", #selector(ExplorerWindowController.toggleDetailsPane(_:)), key: "p",
-                 modifiers: [.command, .option, .shift])
-        menu.add("Item Check Boxes", #selector(ExplorerWindowController.toggleItemCheckboxes(_:)))
-        menu.addItem(withTitle: "Show Hidden Files",
-                     action: #selector(AppDelegate.toggleHiddenFiles(_:)), keyEquivalent: ".")
-            .keyEquivalentModifierMask = [.command, .shift]
+        menu.add("Navigation Pane", #selector(ExplorerTabController.toggleNavigationPane(_:)),
+                 command: .navigationPane, alternates: true)
+        menu.add("Preview Pane", #selector(ExplorerTabController.togglePreviewPane(_:)), command: .previewPane,
+                 alternates: true)
+        menu.add("Details Pane", #selector(ExplorerTabController.toggleDetailsPane(_:)), command: .detailsPane,
+                 alternates: true)
         menu.addItem(.separator())
-        menu.add("Apply View to All Folders", #selector(ExplorerWindowController.applyViewToAllFolders(_:)))
-        menu.add("Reset All Folders…", #selector(ExplorerWindowController.resetAllFolders(_:)))
+        menu.add("Compact View", #selector(AppDelegate.toggleCompactView(_:)), modifiers: [])
+        menu.add("Item Check Boxes", #selector(ExplorerTabController.toggleItemCheckboxes(_:)), modifiers: [])
+        menu.add("Hidden Items", #selector(AppDelegate.toggleHiddenFiles(_:)), command: .hiddenFiles,
+                 alternates: true)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Refresh", action: #selector(AppDelegate.refresh(_:)), keyEquivalent: "r")
+        menu.add("Apply View to All Folders", #selector(ExplorerTabController.applyViewToAllFolders(_:)),
+                 modifiers: [])
+        menu.add("Reset All Folders…", #selector(ExplorerTabController.resetAllFolders(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.add("Refresh", #selector(ExplorerTabController.refresh(_:)), command: .refresh, alternates: true)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Enter Full Screen",
                      action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
@@ -130,18 +147,26 @@ enum MainMenu {
         return menu
     }
 
-    /// The eight layouts, ⌘1…⌘8 (Windows uses Ctrl+Shift+1…8; ⌘⇧3–5 are taken by
-    /// screenshots on the Mac). The tag is the mode's index in `ViewMode.allCases`.
-    static func viewModeItems() -> [NSMenuItem] {
-        ViewMode.allCases.enumerated().map { index, mode in
-            let item = NSMenuItem(
-                title: mode.title,
-                action: #selector(ExplorerWindowController.chooseViewMode(_:)),
-                keyEquivalent: "\(index + 1)"
-            )
-            item.tag = index
-            return item
+    private static func goMenu() -> NSMenu {
+        let menu = NSMenu(title: "Go")
+        menu.add("Back", #selector(ExplorerTabController.goBack(_:)), command: .back, alternates: true)
+        menu.add("Forward", #selector(ExplorerTabController.goForward(_:)), command: .forward, alternates: true)
+        menu.add("Up", #selector(ExplorerTabController.goUp(_:)), command: .up, alternates: true)
+        menu.addItem(.separator())
+        menu.add("Edit Address", #selector(ExplorerTabController.editAddress(_:)), command: .focusAddressBar,
+                 alternates: true)
+        return menu
+    }
+
+    /// The eight layouts: Ctrl+Shift+1…8 as on Windows, or ⌘1…8 under the Mac scheme (where
+    /// ⌘⇧3–5 are screenshots). The tag is the mode's index in `ViewMode.allCases`.
+    static func viewModeItems(alternates: Bool = false) -> [NSMenuItem] {
+        let menu = NSMenu()
+        for (index, mode) in ViewMode.allCases.enumerated() {
+            menu.add(mode.title, #selector(ExplorerTabController.chooseViewMode(_:)), command: .viewMode(index + 1),
+                     alternates: alternates) { $0.tag = index }
         }
+        return menu.detachItems()
     }
 
     /// "View ▸" for the background context menu.
@@ -151,17 +176,24 @@ enum MainMenu {
         return submenuItem(submenu)
     }
 
-    /// "Sort by ▸ Name, Date modified, … / Ascending, Descending". Recycle Bin–only keys are
-    /// hidden elsewhere during validation.
-    static func sortBySubmenuItem() -> NSMenuItem {
-        let submenu = NSMenu(title: "Sort by")
+    /// "Name, Date modified, … / Ascending, Descending". Recycle Bin–only keys are hidden
+    /// elsewhere during validation.
+    static func sortItems() -> [NSMenuItem] {
+        let menu = NSMenu()
         for key in FileItemSortKey.allCases {
-            let item = submenu.add(key.title, #selector(ExplorerWindowController.sortBy(_:)), modifiers: [])
+            let item = menu.add(key.title, #selector(ExplorerTabController.sortBy(_:)), modifiers: [])
             item.representedObject = key.rawValue
         }
-        submenu.addItem(.separator())
-        submenu.add("Ascending", #selector(ExplorerWindowController.setSortOrder(_:)), modifiers: []).tag = 1
-        submenu.add("Descending", #selector(ExplorerWindowController.setSortOrder(_:)), modifiers: []).tag = 0
+        menu.addItem(.separator())
+        menu.add("Ascending", #selector(ExplorerTabController.setSortOrder(_:)), modifiers: []).tag = 1
+        menu.add("Descending", #selector(ExplorerTabController.setSortOrder(_:)), modifiers: []).tag = 0
+        return menu.detachItems()
+    }
+
+    /// "Sort by ▸".
+    static func sortBySubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Sort by")
+        sortItems().forEach(submenu.addItem)
         return submenuItem(submenu)
     }
 
@@ -169,14 +201,26 @@ enum MainMenu {
     static func groupBySubmenuItem() -> NSMenuItem {
         let submenu = NSMenu(title: "Group by")
         for key in FileGroupKey.allCases {
-            let item = submenu.add(key.title, #selector(ExplorerWindowController.groupBy(_:)), modifiers: [])
+            let item = submenu.add(key.title, #selector(ExplorerTabController.groupBy(_:)), modifiers: [])
             item.representedObject = key.rawValue
         }
-        submenu.add("(None)", #selector(ExplorerWindowController.groupBy(_:)), modifiers: [])
+        submenu.add("(None)", #selector(ExplorerTabController.groupBy(_:)), modifiers: [])
         submenu.addItem(.separator())
-        submenu.add("Ascending", #selector(ExplorerWindowController.setGroupOrder(_:)), modifiers: []).tag = 1
-        submenu.add("Descending", #selector(ExplorerWindowController.setGroupOrder(_:)), modifiers: []).tag = 0
+        submenu.add("Ascending", #selector(ExplorerTabController.setGroupOrder(_:)), modifiers: []).tag = 1
+        submenu.add("Descending", #selector(ExplorerTabController.setGroupOrder(_:)), modifiers: []).tag = 0
         return submenuItem(submenu)
+    }
+
+    /// "Folders, Documents, … / Clear filter".
+    static func filterItems() -> [NSMenuItem] {
+        let menu = NSMenu()
+        for kind in FileKind.allCases {
+            let item = menu.add(kind.title, #selector(ExplorerTabController.filterByKind(_:)), modifiers: [])
+            item.representedObject = kind.rawValue
+        }
+        menu.addItem(.separator())
+        menu.add("Clear filter", #selector(ExplorerTabController.filterByKind(_:)), modifiers: [])
+        return menu.detachItems()
     }
 
     private static func submenuItem(_ submenu: NSMenu) -> NSMenuItem {
@@ -190,6 +234,19 @@ enum MainMenu {
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.add("Show Next Tab", #selector(ExplorerWindowController.showNextTab(_:)), command: .nextTab,
+                 alternates: true)
+        menu.add("Show Previous Tab", #selector(ExplorerWindowController.showPreviousTab(_:)), command: .previousTab,
+                 alternates: true)
+        for index in 1...9 where !KeyboardShortcuts.scheme.shortcuts(for: .selectTab(index)).isEmpty {
+            let item = menu.add("Show Tab \(index)", #selector(ExplorerWindowController.showTabAtIndex(_:)),
+                                command: .selectTab(index)) { $0.tag = index }
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+        }
+        menu.add("Duplicate Tab", #selector(ExplorerWindowController.duplicateTab(_:)), modifiers: [])
+        menu.add("Move Tab to New Window", #selector(ExplorerWindowController.moveTabToNewWindow(_:)), modifiers: [])
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Bring All to Front",
                      action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
         return menu
@@ -201,5 +258,14 @@ private extension NSMenu {
         let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
         item.submenu = submenu
         addItem(item)
+    }
+}
+
+extension NSMenu {
+    /// Removes and returns all items, for building item lists with the `add` helpers.
+    func detachItems() -> [NSMenuItem] {
+        let detached = items
+        removeAllItems()
+        return detached
     }
 }
