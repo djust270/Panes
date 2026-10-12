@@ -17,9 +17,10 @@ protocol FileDropHandling: AnyObject {
     func trashDraggedItems(_ urls: [URL])
 }
 
-/// Details view: a sortable, resizable `NSTableView` of the current folder's contents.
-///
-/// Phase 3 adds the other view modes (icons, list, tiles).
+/// The folder's contents in one of eight layouts: Details is an `NSTableView`; the icon views,
+/// List, Tiles and Content share an `NSCollectionView`. Both show the same `FileListContent`
+/// (sorted, optionally grouped), and selection is tracked by URL so it survives reloads and
+/// layout changes. Table, collection, rename, menu and drag-and-drop code live in extensions.
 @MainActor
 final class ContentViewController: NSViewController {
     enum Mode {
@@ -31,79 +32,64 @@ final class ContentViewController: NSViewController {
         case volumes
     }
 
-    enum Column: String, CaseIterable {
-        case name
-        case originalLocation = "original-location"
-        case dateDeleted = "date-deleted"
-        case dateModified = "date-modified"
-        case type
-        case size
-
-        var title: String {
-            switch self {
-            case .name: return "Name"
-            case .originalLocation: return "Original Location"
-            case .dateDeleted: return "Date Deleted"
-            case .dateModified: return "Date modified"
-            case .type: return "Type"
-            case .size: return "Size"
-            }
-        }
-
-        var sortKey: FileItemSortKey {
-            switch self {
-            case .name: return .name
-            case .originalLocation: return .originalLocation
-            case .dateDeleted: return .dateDeleted
-            case .dateModified: return .dateModified
-            case .type: return .type
-            case .size: return .size
-            }
-        }
-
-        var isRecycleBinOnly: Bool { self == .originalLocation || self == .dateDeleted }
-    }
+    private static let checkboxesKey = "ShowItemCheckboxes"
 
     var onNavigate: ((ExplorerLocation) -> Void)?
     var onSelectionChange: (() -> Void)?
     /// The user finished renaming `item` to the given name.
     var onRename: ((FileItem, String) -> Void)?
+    /// The user changed the layout, sort, grouping or columns.
+    var onSettingsChange: ((FolderViewSettings) -> Void)?
     weak var dropHandler: FileDropHandling?
 
-    var mode: Mode = .folder {
-        didSet {
-            guard mode != oldValue else { return }
-            applyColumnVisibility()
-        }
-    }
+    private(set) var mode: Mode = .folder
+    private(set) var settings = FolderViewSettings()
 
     /// Items waiting in the clipboard after Cut, drawn dimmed.
     var cutURLs: Set<URL> = [] {
         didSet {
             guard cutURLs != oldValue, renaming == nil else { return }
-            reloadVisibleRows()
+            reconfigureVisibleItems()
         }
     }
 
-    /// The current folder's unsorted contents, as last supplied by `setItems`.
-    private(set) var items: [FileItem] = []
-    /// What the table actually shows, after applying `sort`.
-    private(set) var sortedItems: [FileItem] = []
-    var sort = FileItemSort() {
+    /// Windows' "Item check boxes" option; app-wide.
+    var showsCheckboxes = UserDefaults.standard.bool(forKey: ContentViewController.checkboxesKey) {
         didSet {
-            guard sort != oldValue else { return }
+            guard showsCheckboxes != oldValue else { return }
+            UserDefaults.standard.set(showsCheckboxes, forKey: Self.checkboxesKey)
             finishRenaming(commit: true)
-            resortAndReload()
+            reconfigureVisibleItems()
         }
     }
 
-    /// Items currently selected, in table order.
+    /// The current folder's contents, unsorted, as last supplied by `setItems`.
+    private(set) var items: [FileItem] = []
+    /// What the views show.
+    private(set) var listContent = FileListContent()
+    /// Every item in display order, including those in collapsed groups.
+    var allItems: [FileItem] { listContent.allItems }
+    /// Group IDs the user collapsed; forgotten on navigation.
+    var collapsedGroups: Set<String> = []
+
+    var isDetailsMode: Bool { settings.viewMode == .details }
+
+    /// Items currently selected, in display order.
     var selectedItems: [FileItem] {
-        tableView.selectedRowIndexes.compactMap { sortedItems.indices.contains($0) ? sortedItems[$0] : nil }
+        if isDetailsMode {
+            return tableView.selectedRowIndexes.compactMap { listContent.item(atRow: $0) }
+        }
+        return collectionView.selectionIndexPaths.sorted().compactMap {
+            listContent.item(section: $0.section, index: $0.item)
+        }
     }
+
+    var selectedURLs: Set<URL> { Set(selectedItems.map(\.url.standardizedFileURL)) }
 
     let tableView = FileTableView()
-    private let scrollView = NSScrollView()
+    let collectionView = FileCollectionView()
+    private let tableScrollView = NSScrollView()
+    private let collectionScrollView = NSScrollView()
     private let unavailableLabel = NSTextField(labelWithString: "")
     let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -116,89 +102,104 @@ final class ContentViewController: NSViewController {
     private var pendingSelection: [URL]?
     private var pendingRename: URL?
     /// The in-place rename in progress, if any.
-    var renaming: (item: FileItem, field: NSTextField)?
+    var renaming: RenameSession?
     /// Items that arrived while renaming; applied when the rename ends.
     var deferredItems: [FileItem]?
+    /// Set while settings are pushed into the views, so view callbacks don't echo them back.
+    var isApplyingSettings = false
+
+    private var propertiesCache: [URL: (modified: Date?, properties: FileProperties)] = [:]
+    private var propertiesTask: Task<Void, Never>?
 
     override func loadView() {
         let container = NSView()
 
         configureTableView()
-        scrollView.documentView = tableView
-        scrollView.hasVerticalScroller = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        tableScrollView.documentView = tableView
+        configureCollectionView()
+        collectionScrollView.documentView = collectionView
+
+        for scrollView in [tableScrollView, collectionScrollView] {
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = true
+            scrollView.autohidesScrollers = true
+            scrollView.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(scrollView)
+            NSLayoutConstraint.activate([
+                scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+                scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
+        }
 
         unavailableLabel.textColor = .secondaryLabelColor
         unavailableLabel.alignment = .center
         unavailableLabel.isHidden = true
         unavailableLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        container.addSubview(scrollView)
         container.addSubview(unavailableLabel)
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-
             unavailableLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             unavailableLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             unavailableLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 16),
         ])
 
         view = container
+        applySettings(settings, notify: false)
     }
 
-    private func configureTableView() {
-        tableView.usesAlternatingRowBackgroundColors = true
-        tableView.allowsMultipleSelection = true
-        tableView.allowsColumnReordering = true
-        tableView.allowsColumnResizing = true
-        tableView.rowSizeStyle = .default
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.target = self
-        tableView.doubleAction = #selector(activateSelection)
-        tableView.onActivateSelection = { [weak self] in self?.activateSelection() }
-        tableView.menu = makeContextMenu()
-        configureDragAndDrop()
+    // MARK: Settings
 
-        for column in Column.allCases {
-            let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
-            tableColumn.title = column.title
-            tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: true)
-            switch column {
-            case .name:
-                tableColumn.width = 320
-                tableColumn.minWidth = 120
-            case .originalLocation:
-                tableColumn.width = 220
-                tableColumn.minWidth = 100
-            case .dateDeleted, .dateModified:
-                tableColumn.width = 150
-                tableColumn.minWidth = 100
-            case .type:
-                tableColumn.width = 120
-                tableColumn.minWidth = 80
-            case .size:
-                tableColumn.width = 90
-                tableColumn.minWidth = 60
-            }
-            tableView.addTableColumn(tableColumn)
-        }
-        tableView.sortDescriptors = [NSSortDescriptor(key: Column.name.rawValue, ascending: true)]
-        applyColumnVisibility()
+    /// Prepares for a new location: its kind and remembered view. Items follow via `setItems`.
+    func show(mode: Mode, settings: FolderViewSettings) {
+        finishRenaming(commit: true)
+        self.mode = mode
+        collapsedGroups = []
+        items = []
+        propertiesTask?.cancel()
+        propertiesCache = [:]
+        applySettings(settings, notify: false)
     }
 
-    private func applyColumnVisibility() {
-        for column in Column.allCases where column.isRecycleBinOnly {
-            let tableColumn = tableView.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(column.rawValue))
-            tableColumn?.isHidden = mode != .recycleBin
-        }
-        if mode != .recycleBin, sort.key == .originalLocation || sort.key == .dateDeleted {
-            tableView.sortDescriptors = [NSSortDescriptor(key: Column.name.rawValue, ascending: true)]
-        }
+    /// Changes the view in response to the user, and reports it through `onSettingsChange`.
+    func updateSettings(_ change: (inout FolderViewSettings) -> Void) {
+        finishRenaming(commit: true)
+        var updated = settings
+        change(&updated)
+        guard updated != settings else { return }
+        applySettings(updated, notify: true)
     }
+
+    private func applySettings(_ newSettings: FolderViewSettings, notify: Bool) {
+        let selection = selectedURLs
+        let hadFocus = view.window?.firstResponder === activeView
+        settings = newSettings.sanitized(inRecycleBin: mode == .recycleBin)
+
+        isApplyingSettings = true
+        applyTableSettings()
+        let isGrouped = settings.grouping != nil
+        let layout = collectionView.collectionViewLayout as? FileCollectionLayout
+        if layout?.viewMode != settings.viewMode || layout?.isGrouped != isGrouped {
+            collectionView.collectionViewLayout = FileCollectionLayout(
+                viewMode: settings.viewMode,
+                isGrouped: isGrouped
+            )
+        }
+        isApplyingSettings = false
+
+        if unavailableLabel.isHidden {
+            tableScrollView.isHidden = !isDetailsMode
+            collectionScrollView.isHidden = isDetailsMode
+        }
+        rebuild(selecting: selection, scroll: true)
+        if hadFocus { view.window?.makeFirstResponder(activeView) }
+        if notify { onSettingsChange?(settings) }
+    }
+
+    /// The view that shows items in the current mode.
+    var activeView: NSView { isDetailsMode ? tableView : collectionView }
+
+    // MARK: Items
 
     /// Replaces the folder's contents, preserving the selection by URL where possible.
     func setItems(_ newItems: [FileItem]) {
@@ -207,26 +208,24 @@ final class ContentViewController: NSViewController {
             return
         }
         unavailableLabel.isHidden = true
-        scrollView.isHidden = false
+        tableScrollView.isHidden = !isDetailsMode
+        collectionScrollView.isHidden = isDetailsMode
 
-        let selectedURLs = Set(selectedItems.map(\.url))
+        var selection = selectedURLs
+        var scroll = false
         items = newItems
-        resortAndReload()
-
-        var rowsToSelect = IndexSet(sortedItems.indices.filter { selectedURLs.contains(sortedItems[$0].url) })
-        if let pending = pendingSelection.map(Set.init) {
-            let pendingRows = IndexSet(sortedItems.indices.filter {
-                pending.contains(sortedItems[$0].url.standardizedFileURL)
-            })
-            if !pendingRows.isEmpty {
-                rowsToSelect = pendingRows
+        if let pending = pendingSelection {
+            let present = Set(pending).intersection(newItems.map(\.url.standardizedFileURL))
+            if !present.isEmpty {
+                revealGroups(containing: present)
+                selection = present
+                scroll = true
                 pendingSelection = nil
-                tableView.scrollRowToVisible(pendingRows.first ?? 0)
             }
         }
-        tableView.selectRowIndexes(rowsToSelect, byExtendingSelection: false)
+        rebuild(selecting: selection, scroll: scroll)
 
-        if let rename = pendingRename, sortedItems.contains(where: { $0.url.standardizedFileURL == rename }) {
+        if let rename = pendingRename, listContent.row(of: rename) != nil {
             pendingRename = nil
             beginRenaming(rename)
         }
@@ -235,41 +234,139 @@ final class ContentViewController: NSViewController {
     /// Selects `urls` (now, or once they appear after a reload) and optionally starts renaming one.
     func select(_ urls: [URL], renaming renameURL: URL? = nil) {
         let wanted = Set(urls.map(\.standardizedFileURL))
-        let rows = IndexSet(sortedItems.indices.filter { wanted.contains(sortedItems[$0].url.standardizedFileURL) })
-        if rows.count == wanted.count, !rows.isEmpty {
-            tableView.selectRowIndexes(rows, byExtendingSelection: false)
-            tableView.scrollRowToVisible(rows.first ?? 0)
+        let loaded = Set(items.map(\.url.standardizedFileURL))
+        if !wanted.isEmpty, wanted.isSubset(of: loaded) {
+            if revealGroups(containing: wanted) { rebuild(selecting: wanted, scroll: true) }
+            setSelection(wanted, scroll: true)
             if let renameURL { beginRenaming(renameURL) }
         } else {
-            pendingSelection = urls.map(\.standardizedFileURL)
+            pendingSelection = Array(wanted)
             pendingRename = renameURL?.standardizedFileURL
         }
     }
 
-    /// Shows a centered message instead of the table, for locations with no Details view yet.
+    /// Shows a centered message instead of the items, for locations with nothing to list.
     func showUnavailable(_ message: String) {
         finishRenaming(commit: false)
         items = []
-        sortedItems = []
-        tableView.reloadData()
+        rebuild(selecting: [], scroll: false)
         unavailableLabel.stringValue = message
         unavailableLabel.isHidden = false
-        scrollView.isHidden = true
+        tableScrollView.isHidden = true
+        collectionScrollView.isHidden = true
     }
 
-    private func resortAndReload() {
-        sortedItems = sort.sorted(items)
-        tableView.reloadData()
-    }
-
-    private func reloadVisibleRows() {
-        let visible = tableView.rows(in: tableView.visibleRect)
-        guard visible.length > 0 else { return }
-        tableView.reloadData(
-            forRowIndexes: IndexSet(integersIn: visible.location..<visible.location + visible.length),
-            columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+    /// Rebuilds `listContent` from `items` and reloads the active view.
+    func rebuild(selecting selection: Set<URL>, scroll: Bool) {
+        let shown = settings.needsProperties ? itemsWithProperties() : items
+        listContent = FileListContent(
+            items: shown,
+            sort: settings.sort,
+            grouping: settings.grouping,
+            collapsedGroups: collapsedGroups
         )
+        if isDetailsMode {
+            tableView.reloadData()
+        } else {
+            collectionView.reloadData()
+        }
+        setSelection(selection, scroll: scroll)
     }
+
+    /// Rebuilds keeping the current selection, unless a rename is in progress.
+    func refreshContent() {
+        if renaming != nil {
+            deferredItems = items
+        } else {
+            rebuild(selecting: selectedURLs, scroll: false)
+        }
+    }
+
+    /// Expands collapsed groups holding any of `urls`. Returns whether any were expanded.
+    @discardableResult
+    private func revealGroups(containing urls: Set<URL>) -> Bool {
+        let hidden = listContent.sections.filter { section in
+            section.isCollapsed && section.group?.items.contains { urls.contains($0.url.standardizedFileURL) } == true
+        }
+        let ids = hidden.compactMap(\.group?.id)
+        collapsedGroups.subtract(ids)
+        return !ids.isEmpty
+    }
+
+    func toggleGroup(_ id: String) {
+        finishRenaming(commit: true)
+        if collapsedGroups.contains(id) {
+            collapsedGroups.remove(id)
+        } else {
+            collapsedGroups.insert(id)
+        }
+        rebuild(selecting: selectedURLs, scroll: false)
+    }
+
+    func selectGroup(_ id: String) {
+        guard let group = listContent.sections.first(where: { $0.group?.id == id })?.group else { return }
+        if collapsedGroups.contains(id) {
+            collapsedGroups.remove(id)
+            rebuild(selecting: [], scroll: false)
+        }
+        setSelection(Set(group.items.map(\.url.standardizedFileURL)), scroll: false)
+        view.window?.makeFirstResponder(activeView)
+    }
+
+    // MARK: Selection
+
+    /// Selects exactly `urls` (those that are visible) in the active view.
+    func setSelection(_ urls: Set<URL>, scroll: Bool) {
+        if isDetailsMode {
+            let rows = IndexSet(urls.compactMap { listContent.row(of: $0) })
+            tableView.selectRowIndexes(rows, byExtendingSelection: false)
+            if scroll, let first = rows.first { tableView.scrollRowToVisible(first) }
+        } else {
+            let paths = Set(urls.compactMap { url in
+                listContent.position(of: url).map { IndexPath(item: $0.index, section: $0.section) }
+            })
+            collectionView.deselectItems(at: collectionView.selectionIndexPaths.subtracting(paths))
+            collectionView.selectItems(at: paths, scrollPosition: [])
+            if scroll, let first = paths.min() {
+                collectionView.scrollToItems(at: [first], scrollPosition: .nearestHorizontalEdge)
+            }
+        }
+        selectionDidChange()
+    }
+
+    func selectAllItems() {
+        setSelection(Set(listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)), scroll: false)
+    }
+
+    func selectNone() {
+        setSelection([], scroll: false)
+    }
+
+    func invertSelection() {
+        let selected = selectedURLs
+        let visible = listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)
+        setSelection(Set(visible.filter { !selected.contains($0) }), scroll: false)
+    }
+
+    /// Toggles one item without touching the rest of the selection (item checkboxes).
+    func toggleSelection(of url: URL) {
+        var selection = selectedURLs
+        let key = url.standardizedFileURL
+        if selection.contains(key) {
+            selection.remove(key)
+        } else {
+            selection.insert(key)
+        }
+        setSelection(selection, scroll: false)
+        view.window?.makeFirstResponder(activeView)
+    }
+
+    func selectionDidChange() {
+        if showsCheckboxes, isDetailsMode { updateVisibleCheckboxes() }
+        onSelectionChange?()
+    }
+
+    // MARK: Activation
 
     @objc func activateSelection() {
         let selected = selectedItems
@@ -283,95 +380,73 @@ final class ContentViewController: NSViewController {
         }
     }
 
-    private func icon(for item: FileItem) -> NSImage {
+    // MARK: Display helpers
+
+    func icon(for item: FileItem) -> NSImage {
         NSWorkspace.shared.icon(forFile: item.url.path)
     }
-}
 
-extension ContentViewController: NSTableViewDataSource {
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        sortedItems.count
+    func isCut(_ item: FileItem) -> Bool {
+        cutURLs.contains(item.url.standardizedFileURL)
     }
 
-    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-        guard let descriptor = tableView.sortDescriptors.first,
-              let key = descriptor.key,
-              let column = Column(rawValue: key) else { return }
-        sort = FileItemSort(key: column.sortKey, ascending: descriptor.ascending)
-    }
-}
-
-extension ContentViewController: NSTableViewDelegate {
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let identifier = tableColumn?.identifier, let column = Column(rawValue: identifier.rawValue) else {
-            return nil
-        }
-        let item = sortedItems[row]
-
-        let cellIdentifier = NSUserInterfaceItemIdentifier("cell-\(column.rawValue)")
-        let cell: NSTableCellView
-        if let reused = tableView.makeView(withIdentifier: cellIdentifier, owner: self) as? NSTableCellView {
-            cell = reused
+    /// Redraws visible items after a change that doesn't affect layout (cut, checkboxes).
+    func reconfigureVisibleItems() {
+        if isDetailsMode {
+            let visible = tableView.rows(in: tableView.visibleRect)
+            let rows = IndexSet(integersIn: visible.location..<visible.location + visible.length)
+                .filteredIndexSet { listContent.item(atRow: $0) != nil }
+            guard !rows.isEmpty else { return }
+            let columns = IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            tableView.reloadData(forRowIndexes: rows, columnIndexes: columns)
         } else {
-            cell = makeCell(for: column, identifier: cellIdentifier)
-        }
-
-        cell.textField?.stringValue = text(for: column, item: item)
-        if column == .name {
-            cell.imageView?.image = icon(for: item)
-        }
-        cell.alphaValue = cutURLs.contains(item.url.standardizedFileURL) ? 0.45 : 1
-        return cell
-    }
-
-    private func makeCell(for column: Column, identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = identifier
-
-        let textField = NSTextField(labelWithString: "")
-        textField.lineBreakMode = .byTruncatingMiddle
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(textField)
-        cell.textField = textField
-
-        if column == .name {
-            let imageView = NSImageView()
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(imageView)
-            cell.imageView = imageView
-
-            NSLayoutConstraint.activate([
-                imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                imageView.widthAnchor.constraint(equalToConstant: 16),
-                imageView.heightAnchor.constraint(equalToConstant: 16),
-
-                textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-        } else {
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-        }
-        return cell
-    }
-
-    private func text(for column: Column, item: FileItem) -> String {
-        switch column {
-        case .name: return item.name
-        case .originalLocation: return item.originalFolderPath
-        case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
-        case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""
-        case .type: return item.typeDescription
-        case .size: return item.size.map { FileSizeFormat.string(for: $0) } ?? ""
+            for indexPath in collectionView.indexPathsForVisibleItems() {
+                guard let cell = collectionView.item(at: indexPath) as? FileCollectionItem else { continue }
+                configure(cell, at: indexPath)
+            }
         }
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        onSelectionChange?()
+    // MARK: Properties
+
+    /// `items` with tags, dimensions and duration filled in from the cache; starts reading
+    /// whatever is missing, and rebuilds when that's done.
+    private func itemsWithProperties() -> [FileItem] {
+        var missing: [FileItem] = []
+        let merged = items.map { item -> FileItem in
+            var item = item
+            if let cached = propertiesCache[item.url], cached.modified == item.dateModified {
+                item.properties = cached.properties
+            } else {
+                missing.append(item)
+            }
+            return item
+        }
+        if !missing.isEmpty { loadProperties(missing) }
+        return merged
+    }
+
+    private func loadProperties(_ missing: [FileItem]) {
+        propertiesTask?.cancel()
+        propertiesTask = Task { [weak self] in
+            let reader = Task.detached(priority: .utility) { () -> [(FileItem, FileProperties)]? in
+                var result: [(FileItem, FileProperties)] = []
+                for item in missing {
+                    if Task.isCancelled { return nil }
+                    result.append((item, FilePropertiesReader.read(item)))
+                }
+                return result
+            }
+            let loaded = await withTaskCancellationHandler {
+                await reader.value
+            } onCancel: {
+                reader.cancel()
+            }
+            guard let self, let loaded, !Task.isCancelled else { return }
+            for (item, properties) in loaded {
+                propertiesCache[item.url] = (item.dateModified, properties)
+            }
+            refreshContent()
+        }
     }
 }

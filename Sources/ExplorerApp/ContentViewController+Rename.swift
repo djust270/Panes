@@ -1,8 +1,17 @@
 import AppKit
 import ExplorerCore
 
-/// Rename in place (F2): the Name cell becomes editable with the name, minus its extension,
-/// selected. Return, Tab or clicking elsewhere commits; Escape cancels.
+/// An in-place rename: the item's name label, temporarily made editable.
+struct RenameSession {
+    let item: FileItem
+    let field: NSTextField
+    /// The label's line breaking, restored afterwards.
+    let lineBreakMode: NSLineBreakMode
+}
+
+/// Rename in place (F2): the item's name label becomes editable with the name, minus its
+/// extension, selected. Return, Tab or clicking elsewhere commits; Escape cancels. Works in
+/// every view mode.
 extension ContentViewController: NSTextFieldDelegate {
     var isRenaming: Bool { renaming != nil }
 
@@ -14,26 +23,18 @@ extension ContentViewController: NSTextFieldDelegate {
     func beginRenaming(_ url: URL) {
         finishRenaming(commit: true)
         guard mode == .folder,
-              let row = sortedItems.firstIndex(where: { $0.url.standardizedFileURL == url.standardizedFileURL })
-        else { return }
-        let column = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(Column.name.rawValue))
-        guard column >= 0 else { return }
+              let item = listContent.allItems.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+              let (field, container) = nameField(for: item) else { return }
 
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        tableView.scrollRowToVisible(row)
-        guard let cell = tableView.view(atColumn: column, row: row, makeIfNecessary: true) as? NSTableCellView,
-              let field = cell.textField else { return }
-
-        let item = sortedItems[row]
-        renaming = (item, field)
-        cell.alphaValue = 1
+        renaming = RenameSession(item: item, field: field, lineBreakMode: field.lineBreakMode)
+        container.alphaValue = 1
         field.isEditable = true
         field.isSelectable = true
         field.isBezeled = true
         field.bezelStyle = .squareBezel
         field.drawsBackground = true
         field.backgroundColor = .textBackgroundColor
-        field.lineBreakMode = .byClipping
+        if field.maximumNumberOfLines == 1 { field.lineBreakMode = .byClipping }
         field.delegate = self
         view.window?.makeFirstResponder(field)
 
@@ -41,25 +42,45 @@ extension ContentViewController: NSTextFieldDelegate {
         field.currentEditor()?.selectedRange = FileNaming.renameSelection(for: item.name, hasExtension: hasExtension)
     }
 
+    /// Selects and reveals `item`, returning its name label and the view to un-dim.
+    private func nameField(for item: FileItem) -> (NSTextField, NSView)? {
+        let url = item.url.standardizedFileURL
+        if isDetailsMode {
+            guard let row = listContent.row(of: url), nameColumnIndex >= 0 else { return nil }
+            setSelection([url], scroll: true)
+            let cell = tableView.view(atColumn: nameColumnIndex, row: row, makeIfNecessary: true) as? NSTableCellView
+            guard let cell, let field = cell.textField else { return nil }
+            return (field, cell)
+        }
+        guard let position = listContent.position(of: url) else { return nil }
+        let indexPath = IndexPath(item: position.index, section: position.section)
+        setSelection([url], scroll: true)
+        collectionView.layoutSubtreeIfNeeded()
+        guard let cell = collectionView.item(at: indexPath) as? FileCollectionItem,
+              let field = cell.textField else { return nil }
+        return (field, cell.view)
+    }
+
     /// Ends any rename in progress. Committing reports the new name through `onRename`.
     func finishRenaming(commit: Bool) {
-        guard let (item, field) = renaming else { return }
+        guard let session = renaming else { return }
+        let field = session.field
         let newName = field.currentEditor()?.string ?? field.stringValue
         renaming = nil
 
         if view.window?.firstResponder === field.currentEditor() {
-            view.window?.makeFirstResponder(tableView)
+            view.window?.makeFirstResponder(activeView)
         }
         field.isEditable = false
         field.isSelectable = false
         field.isBezeled = false
         field.drawsBackground = false
-        field.lineBreakMode = .byTruncatingMiddle
+        field.lineBreakMode = session.lineBreakMode
         field.delegate = nil
-        field.stringValue = item.name
+        field.stringValue = session.item.name
 
-        if commit, newName != item.name {
-            onRename?(item, newName)
+        if commit, newName != session.item.name {
+            onRename?(session.item, newName)
         }
         if let deferred = deferredItems {
             deferredItems = nil

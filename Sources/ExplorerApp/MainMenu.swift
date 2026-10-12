@@ -1,4 +1,5 @@
 import AppKit
+import ExplorerCore
 
 /// Builds the menu bar in code (there is no nib/storyboard in a SwiftPM app).
 @MainActor
@@ -92,18 +93,34 @@ enum MainMenu {
                  modifiers: [.command, .option])
         menu.addItem(.separator())
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        menu.add("Select None", #selector(ExplorerWindowController.selectNone(_:)), key: "a",
+                 modifiers: [.command, .option])
+        menu.add("Invert Selection", #selector(ExplorerWindowController.invertSelection(_:)), key: "i",
+                 modifiers: [.command, .shift])
         return menu
     }
 
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
+        viewModeItems().forEach(menu.addItem)
+        menu.addItem(.separator())
+        menu.addItem(sortBySubmenuItem())
+        menu.addItem(groupBySubmenuItem())
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Show Navigation Pane",
                      action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
             .keyEquivalentModifierMask = [.command, .control]
-        menu.addItem(.separator())
+        menu.add("Preview Pane", #selector(ExplorerWindowController.togglePreviewPane(_:)), key: "p",
+                 modifiers: [.command, .option])
+        menu.add("Details Pane", #selector(ExplorerWindowController.toggleDetailsPane(_:)), key: "p",
+                 modifiers: [.command, .option, .shift])
+        menu.add("Item Check Boxes", #selector(ExplorerWindowController.toggleItemCheckboxes(_:)))
         menu.addItem(withTitle: "Show Hidden Files",
                      action: #selector(AppDelegate.toggleHiddenFiles(_:)), keyEquivalent: ".")
             .keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(.separator())
+        menu.add("Apply View to All Folders", #selector(ExplorerWindowController.applyViewToAllFolders(_:)))
+        menu.add("Reset All Folders…", #selector(ExplorerWindowController.resetAllFolders(_:)))
         menu.addItem(.separator())
         menu.addItem(withTitle: "Refresh", action: #selector(AppDelegate.refresh(_:)), keyEquivalent: "r")
         menu.addItem(.separator())
@@ -111,6 +128,61 @@ enum MainMenu {
                      action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]
         return menu
+    }
+
+    /// The eight layouts, ⌘1…⌘8 (Windows uses Ctrl+Shift+1…8; ⌘⇧3–5 are taken by
+    /// screenshots on the Mac). The tag is the mode's index in `ViewMode.allCases`.
+    static func viewModeItems() -> [NSMenuItem] {
+        ViewMode.allCases.enumerated().map { index, mode in
+            let item = NSMenuItem(
+                title: mode.title,
+                action: #selector(ExplorerWindowController.chooseViewMode(_:)),
+                keyEquivalent: "\(index + 1)"
+            )
+            item.tag = index
+            return item
+        }
+    }
+
+    /// "View ▸" for the background context menu.
+    static func viewSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "View")
+        viewModeItems().forEach(submenu.addItem)
+        return submenuItem(submenu)
+    }
+
+    /// "Sort by ▸ Name, Date modified, … / Ascending, Descending". Recycle Bin–only keys are
+    /// hidden elsewhere during validation.
+    static func sortBySubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Sort by")
+        for key in FileItemSortKey.allCases {
+            let item = submenu.add(key.title, #selector(ExplorerWindowController.sortBy(_:)), modifiers: [])
+            item.representedObject = key.rawValue
+        }
+        submenu.addItem(.separator())
+        submenu.add("Ascending", #selector(ExplorerWindowController.setSortOrder(_:)), modifiers: []).tag = 1
+        submenu.add("Descending", #selector(ExplorerWindowController.setSortOrder(_:)), modifiers: []).tag = 0
+        return submenuItem(submenu)
+    }
+
+    /// "Group by ▸ Name, Date modified, … / (None) / Ascending, Descending".
+    static func groupBySubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Group by")
+        for key in FileGroupKey.allCases {
+            let item = submenu.add(key.title, #selector(ExplorerWindowController.groupBy(_:)), modifiers: [])
+            item.representedObject = key.rawValue
+        }
+        submenu.add("(None)", #selector(ExplorerWindowController.groupBy(_:)), modifiers: [])
+        submenu.addItem(.separator())
+        submenu.add("Ascending", #selector(ExplorerWindowController.setGroupOrder(_:)), modifiers: []).tag = 1
+        submenu.add("Descending", #selector(ExplorerWindowController.setGroupOrder(_:)), modifiers: []).tag = 0
+        return submenuItem(submenu)
+    }
+
+    private static func submenuItem(_ submenu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 
     private static func windowMenu() -> NSMenu {

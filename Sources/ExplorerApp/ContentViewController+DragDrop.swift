@@ -1,8 +1,9 @@
 import AppKit
 import ExplorerCore
 
-/// Drag and drop: rows drag out as file URLs (to Finder, other apps, or other windows), and
-/// files or file promises can be dropped onto folder rows or the view's background.
+/// Drag and drop: items drag out as file URLs (to Finder, other apps, or other windows), and
+/// files or file promises can be dropped onto folder items or the view's background. The
+/// table and the collection view share the same rules.
 extension ContentViewController {
     func configureDragAndDrop() {
         tableView.registerForDraggedTypes([.fileURL] + NSFilePromiseReceiver.readableDraggedTypes.map {
@@ -14,8 +15,8 @@ extension ContentViewController {
     }
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        guard mode != .volumes, sortedItems.indices.contains(row), !isRenaming else { return nil }
-        return sortedItems[row].url as NSURL
+        guard mode != .volumes, !isRenaming, let item = listContent.item(atRow: row) else { return nil }
+        return item.url as NSURL
     }
 
     func tableView(
@@ -24,6 +25,10 @@ extension ContentViewController {
         endedAt screenPoint: NSPoint,
         operation: NSDragOperation
     ) {
+        draggingSessionEnded(session, operation: operation)
+    }
+
+    private func draggingSessionEnded(_ session: NSDraggingSession, operation: NSDragOperation) {
         guard operation == .delete else { return }
         let urls = session.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
@@ -38,13 +43,16 @@ extension ContentViewController {
         proposedRow row: Int,
         proposedDropOperation dropOperation: NSTableView.DropOperation
     ) -> NSDragOperation {
-        guard let dropHandler, mode != .volumes else { return [] }
-        let target = dropTarget(row: row, dropOperation: dropOperation)
+        let target = dropOperation == .on ? dropTarget(listContent.item(atRow: row)) : nil
         if target == nil {
             // Highlight the whole view: the drop goes into the folder being shown.
             tableView.setDropRow(-1, dropOperation: .on)
         }
+        return validateDrop(info, into: target)
+    }
 
+    private func validateDrop(_ info: NSDraggingInfo, into target: ExplorerLocation?) -> NSDragOperation {
+        guard let dropHandler, mode != .volumes else { return [] }
         if let urls = Self.fileURLs(in: info.draggingPasteboard) {
             return dropHandler.dropOperation(for: urls, into: target, sourceMask: info.draggingSourceOperationMask)
         }
@@ -60,8 +68,12 @@ extension ContentViewController {
         row: Int,
         dropOperation: NSTableView.DropOperation
     ) -> Bool {
+        let target = dropOperation == .on ? dropTarget(listContent.item(atRow: row)) : nil
+        return acceptDrop(info, into: target)
+    }
+
+    private func acceptDrop(_ info: NSDraggingInfo, into target: ExplorerLocation?) -> Bool {
         guard let dropHandler else { return false }
-        let target = dropTarget(row: row, dropOperation: dropOperation)
         if let urls = Self.fileURLs(in: info.draggingPasteboard) {
             let mask = info.draggingSourceOperationMask
             let operation = dropHandler.dropOperation(for: urls, into: target, sourceMask: mask)
@@ -75,11 +87,72 @@ extension ContentViewController {
         return true
     }
 
-    /// The folder row under the drop, or `nil` for the folder being shown.
-    private func dropTarget(row: Int, dropOperation: NSTableView.DropOperation) -> ExplorerLocation? {
-        guard dropOperation == .on, mode == .folder, sortedItems.indices.contains(row) else { return nil }
-        let item = sortedItems[row]
-        return item.isFolder ? .folder(item.url) : nil
+    /// The folder under the drop, or `nil` for the folder being shown.
+    private func dropTarget(_ item: FileItem?) -> ExplorerLocation? {
+        guard mode == .folder, let item, item.isFolder else { return nil }
+        return .folder(item.url)
+    }
+
+    // MARK: Collection view
+
+    func configureCollectionDragAndDrop() {
+        collectionView.registerForDraggedTypes([.fileURL] + NSFilePromiseReceiver.readableDraggedTypes.map {
+            NSPasteboard.PasteboardType($0)
+        })
+        collectionView.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
+        collectionView.setDraggingSourceOperationMask([.copy, .move, .link, .generic, .delete], forLocal: false)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        canDragItemsAt indexPaths: Set<IndexPath>,
+        with event: NSEvent
+    ) -> Bool {
+        mode != .volumes && !isRenaming
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        pasteboardWriterForItemAt indexPath: IndexPath
+    ) -> NSPasteboardWriting? {
+        guard mode != .volumes, !isRenaming,
+              let item = listContent.item(section: indexPath.section, index: indexPath.item) else { return nil }
+        return item.url as NSURL
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        draggingSession session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        dragOperation operation: NSDragOperation
+    ) {
+        draggingSessionEnded(session, operation: operation)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        validateDrop draggingInfo: NSDraggingInfo,
+        proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
+        dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
+    ) -> NSDragOperation {
+        let indexPath = proposedDropIndexPath.pointee as IndexPath
+        let item = listContent.item(section: indexPath.section, index: indexPath.item)
+        let target = proposedDropOperation.pointee == .on ? dropTarget(item) : nil
+        if target == nil {
+            // Not onto a folder: the drop goes into the folder being shown.
+            proposedDropOperation.pointee = .before
+        }
+        return validateDrop(draggingInfo, into: target)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        acceptDrop draggingInfo: NSDraggingInfo,
+        indexPath: IndexPath,
+        dropOperation: NSCollectionView.DropOperation
+    ) -> Bool {
+        let item = listContent.item(section: indexPath.section, index: indexPath.item)
+        return acceptDrop(draggingInfo, into: dropOperation == .on ? dropTarget(item) : nil)
     }
 
     static func fileURLs(in pasteboard: NSPasteboard) -> [URL]? {

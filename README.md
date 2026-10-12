@@ -25,6 +25,8 @@ To work in Xcode, open `Package.swift`.
 - `Sources/ExplorerCore` — UI-free model: `FileItem`, `DirectoryLoader` (fast `getattrlistbulk` path with
   `FileManager` fallback), `DirectoryWatcher` (FSEvents), `ExplorerLocation`, `NavigationHistory`, and the
   file-operation engine (`FileOperationTask`: copy/move/trash/delete/rename/create with conflicts, pause/cancel
-  and undo inverses), `FileNaming`, `RecycleBin`. Must not import AppKit.
+  and undo inverses), `FileNaming`, `RecycleBin`, and the view model: `ViewMode`, `FileColumn`, `FileGrouper`,
+  `FileListContent`, `FolderViewSettingsStore` (per-folder view memory), `FilePropertiesReader`, `LRUCache`.
+  Must not import AppKit.
 - `Sources/ExplorerApp` — AppKit UI.
 - `Tests/ExplorerCoreTests` — Swift Testing suites.

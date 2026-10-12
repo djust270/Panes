@@ -25,6 +25,8 @@ public struct FileItem: Sendable, Hashable, Identifiable {
     public let typeIdentifier: String?
     /// Where a Recycle Bin item came from; `nil` outside the Recycle Bin.
     public var trashInfo: TrashInfo?
+    /// Tags, dimensions and duration; `nil` until read with `FilePropertiesReader`.
+    public var properties: FileProperties?
 
     public var id: URL { url }
 

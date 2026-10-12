@@ -70,12 +70,12 @@ extension ExplorerWindowController {
     }
 
     @objc func restoreAll(_ sender: Any?) {
-        restore(content.sortedItems)
+        restore(content.allItems)
     }
 
     @objc func emptyRecycleBin(_ sender: Any?) {
         // Everything, including hidden items the view may not be showing.
-        let urls = ((try? RecycleBin.contents(includeHidden: true)) ?? content.sortedItems).map(\.url)
+        let urls = ((try? RecycleBin.contents(includeHidden: true)) ?? content.allItems).map(\.url)
         guard !urls.isEmpty else { return }
         Task {
             guard await confirmPermanentDelete(of: urls) else { return }
@@ -238,9 +238,9 @@ extension ExplorerWindowController: NSMenuItemValidation {
         case #selector(restoreSelection(_:)):
             return inRecycleBin && !selection.isEmpty
         case #selector(restoreAll(_:)), #selector(emptyRecycleBin(_:)):
-            return inRecycleBin && !content.sortedItems.isEmpty
+            return inRecycleBin && !content.allItems.isEmpty
         default:
-            return true
+            return validateViewMenuItem(menuItem) ?? true
         }
     }
 }

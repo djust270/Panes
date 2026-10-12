@@ -93,6 +93,29 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
 - **Preview pane** (`QLPreviewView`) and **Details pane** (metadata + thumbnail)
 - Item checkboxes, Ctrl/Shift multi-select, rubber-band select, Select all / none / invert
 
+**Status: implemented, UI not yet checked by hand** (boxes stay unticked until it is).
+- Details stays an `NSTableView` (group headers are group rows); the other seven layouts share one `NSCollectionView`
+  with a flow layout per mode. Both render `FileListContent` (ExplorerCore: sort → group → collapse), and selection
+  is kept by URL so it survives reloads and layout switches. Layouts are ⌘1…⌘8 (Windows' Ctrl+Shift+1…8 would
+  clash with ⌘⇧3–5 screenshots), plus the View menu, the background context menu and the status-bar buttons.
+- List view scrolls sideways in columns; when grouped it scrolls vertically instead.
+- Groups use Windows 11's buckets (Today … A long time ago, A - H …, Tiny … Gigantic, Unspecified last). Clicking a
+  header selects its items; the chevron collapses it. No Group by Tags (an item can have several).
+- Thumbnails (Medium icons and up, Tiles, Content, Details pane) come from `QLThumbnailGenerator`, cached in an LRU
+  bounded at 256 MB of pixels; files without one keep their type icon and aren't retried.
+- Extra columns: Date created, Tags, Dimensions, Duration. Tags/dimensions/duration are read only when shown or
+  sorted on (`FilePropertiesReader`: Spotlight, with an image-header fallback for dimensions on unindexed volumes;
+  duration needs Spotlight). Header right-click: Size column to fit, Size all columns to fit, column chooser.
+- Per-folder memory (`FolderViewSettingsStore`, up to 2000 folders, least recently changed forgotten): layout, sort,
+  grouping, visible columns and their order. Column widths are app-wide. View › Apply View to All Folders /
+  Reset All Folders…; the Recycle Bin and This PC keep their own views.
+- Preview pane (⌥⌘P) and Details pane (⇧⌥⌘P) share a collapsible right-hand split item; the choice is app-wide.
+- Item check boxes (View menu) toggle an item without touching the rest of the selection. Rubber-band selection
+  works in every layout; in Details it starts from empty space or any column but Name (dragging a name drags the
+  files). Edit › Select None (⌥⌘A) and Invert Selection (⇧⌘I).
+- **Ctrl+click to toggle is deferred to Phase 4's Windows keyboard scheme**: on the Mac, Ctrl+click is right-click.
+  ⌘-click and ⇧-click work now.
+
 ## Phase 4 — Windows 11 look (~2–3 weeks)
 - Mica-style translucent background, Windows 11 corner radii & spacing, optional custom caption bar (min/max/close on the right)
 - **Tabs** in the title bar (new, close, reorder, drag tab out to new window)

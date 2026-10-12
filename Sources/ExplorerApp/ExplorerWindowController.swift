@@ -65,7 +65,9 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         }
         content.onSelectionChange = { [weak self] in
             self?.updateStatusBar()
+            self?.updateSidePane()
         }
+        connectViewCallbacks()
         content.onRename = { [weak self] item, name in
             self?.rename(item, to: name)
         }
@@ -102,6 +104,17 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
             MainActor.assumeIsolated {
                 self?.content.cutURLs = FileClipboard.shared.cutURLs
             }
+        }
+    }
+
+    private func connectViewCallbacks() {
+        content.onSettingsChange = { [weak self] settings in
+            guard let self else { return }
+            FolderViewMemory.store.save(settings, for: history.current)
+            rootViewController.statusBar.setViewMode(settings.viewMode)
+        }
+        rootViewController.statusBar.onViewMode = { [weak self] mode in
+            self?.setViewMode(mode)
         }
     }
 
@@ -156,12 +169,15 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
 
     private func show(_ location: ExplorerLocation) {
         window?.title = location.displayName
-        content.finishRenaming(commit: true)
+        let mode: ContentViewController.Mode
         switch location {
-        case .recycleBin: content.mode = .recycleBin
-        case .thisPC: content.mode = .volumes
-        default: content.mode = .folder
+        case .recycleBin: mode = .recycleBin
+        case .thisPC: mode = .volumes
+        default: mode = .folder
         }
+        let settings = FolderViewMemory.store.settings(for: location)
+        content.show(mode: mode, settings: settings)
+        rootViewController.statusBar.setViewMode(content.settings.viewMode)
         rootViewController.navigationPane.select(location)
         toolbarController.update(location: location, history: history)
         reload()
@@ -228,7 +244,7 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
             ? nil
             : selected.reduce(0) { $0 + ($1.size ?? 0) }
         rootViewController.statusBar.text = StatusBarText.make(
-            totalCount: content.sortedItems.count,
+            totalCount: content.allItems.count,
             selectedCount: selected.count,
             selectedSizeBytes: selectedSize
         )
