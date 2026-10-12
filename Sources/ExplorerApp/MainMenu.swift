@@ -47,12 +47,34 @@ enum MainMenu {
         return menu
     }
 
+    /// Key equivalents for keys without a printable character.
+    static let f2Key = String(UnicodeScalar(UInt16(NSF2FunctionKey)).map(Character.init) ?? " ")
+    static let backspaceKey = "\u{8}"
+
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
         menu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
+        menu.addItem(newSubmenuItem())
+        menu.addItem(.separator())
+        menu.add("Open", #selector(ExplorerWindowController.openSelection(_:)), key: "o")
+        menu.addItem(.separator())
+        menu.add("Restore", #selector(ExplorerWindowController.restoreSelection(_:)))
+        menu.add("Empty Recycle Bin…", #selector(ExplorerWindowController.emptyRecycleBin(_:)))
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         return menu
+    }
+
+    /// "New ▸ Folder / Text Document", shared by the File menu and the background context menu.
+    static func newSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "New")
+        submenu.add("Folder", #selector(ExplorerWindowController.newFolder(_:)), key: "n",
+                    modifiers: [.command, .shift])
+        submenu.add("Text Document", #selector(ExplorerWindowController.newTextDocument(_:)), key: "n",
+                    modifiers: [.command, .option])
+        let item = NSMenuItem(title: "New", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 
     private static func editMenu() -> NSMenu {
@@ -63,6 +85,12 @@ enum MainMenu {
         menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.addItem(.separator())
+        menu.add("Rename", #selector(ExplorerWindowController.renameSelection(_:)), key: f2Key, modifiers: [])
+        menu.add("Delete", #selector(ExplorerWindowController.delete(_:)), key: backspaceKey)
+        menu.add("Delete Permanently…", #selector(ExplorerWindowController.deletePermanently(_:)), key: backspaceKey,
+                 modifiers: [.command, .option])
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         return menu
     }

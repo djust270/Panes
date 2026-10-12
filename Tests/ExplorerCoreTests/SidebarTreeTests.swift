@@ -2,12 +2,11 @@ import Testing
 @testable import ExplorerCore
 
 @Suite struct SidebarTreeTests {
-    @Test func rootsStartWithHomeAndEndWithNetwork() {
+    @Test func rootsStartWithHomeAndEndWithNetworkAndRecycleBin() {
         let roots = SidebarTree.roots()
         #expect(roots.first?.title == "Home")
         #expect(roots.first?.location == .home)
-        #expect(roots.last?.title == "Network")
-        #expect(roots.last?.location == .network)
+        #expect(roots.suffix(2).map(\.location) == [.network, .recycleBin])
     }
 
     @Test func rootsContainTheSixWellKnownFolders() {

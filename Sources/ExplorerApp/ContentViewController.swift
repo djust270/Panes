@@ -1,13 +1,40 @@
 import AppKit
 import ExplorerCore
 
+/// Receives drops on the content view and the navigation pane. `nil` locations mean "the
+/// location the window is showing".
+@MainActor
+protocol FileDropHandling: AnyObject {
+    func dropOperation(
+        for urls: [URL],
+        into location: ExplorerLocation?,
+        sourceMask: NSDragOperation
+    ) -> NSDragOperation
+    func performDrop(of urls: [URL], into location: ExplorerLocation?, operation: NSDragOperation)
+    func canReceivePromises(into location: ExplorerLocation?) -> Bool
+    func receivePromises(_ receivers: [NSFilePromiseReceiver], into location: ExplorerLocation?)
+    /// Items dragged out to the Dock's Trash.
+    func trashDraggedItems(_ urls: [URL])
+}
+
 /// Details view: a sortable, resizable `NSTableView` of the current folder's contents.
 ///
-/// Phase 3 adds the other view modes (icons, list, tiles); Phase 1 is Details-only.
+/// Phase 3 adds the other view modes (icons, list, tiles).
 @MainActor
 final class ContentViewController: NSViewController {
-    private enum Column: String, CaseIterable {
+    enum Mode {
+        /// A real folder.
+        case folder
+        /// The Recycle Bin: adds Original Location and Date Deleted columns.
+        case recycleBin
+        /// This PC's volume list: no file operations.
+        case volumes
+    }
+
+    enum Column: String, CaseIterable {
         case name
+        case originalLocation = "original-location"
+        case dateDeleted = "date-deleted"
         case dateModified = "date-modified"
         case type
         case size
@@ -15,6 +42,8 @@ final class ContentViewController: NSViewController {
         var title: String {
             switch self {
             case .name: return "Name"
+            case .originalLocation: return "Original Location"
+            case .dateDeleted: return "Date Deleted"
             case .dateModified: return "Date modified"
             case .type: return "Type"
             case .size: return "Size"
@@ -24,15 +53,37 @@ final class ContentViewController: NSViewController {
         var sortKey: FileItemSortKey {
             switch self {
             case .name: return .name
+            case .originalLocation: return .originalLocation
+            case .dateDeleted: return .dateDeleted
             case .dateModified: return .dateModified
             case .type: return .type
             case .size: return .size
             }
         }
+
+        var isRecycleBinOnly: Bool { self == .originalLocation || self == .dateDeleted }
     }
 
     var onNavigate: ((ExplorerLocation) -> Void)?
     var onSelectionChange: (() -> Void)?
+    /// The user finished renaming `item` to the given name.
+    var onRename: ((FileItem, String) -> Void)?
+    weak var dropHandler: FileDropHandling?
+
+    var mode: Mode = .folder {
+        didSet {
+            guard mode != oldValue else { return }
+            applyColumnVisibility()
+        }
+    }
+
+    /// Items waiting in the clipboard after Cut, drawn dimmed.
+    var cutURLs: Set<URL> = [] {
+        didSet {
+            guard cutURLs != oldValue, renaming == nil else { return }
+            reloadVisibleRows()
+        }
+    }
 
     /// The current folder's unsorted contents, as last supplied by `setItems`.
     private(set) var items: [FileItem] = []
@@ -41,6 +92,7 @@ final class ContentViewController: NSViewController {
     var sort = FileItemSort() {
         didSet {
             guard sort != oldValue else { return }
+            finishRenaming(commit: true)
             resortAndReload()
         }
     }
@@ -50,15 +102,23 @@ final class ContentViewController: NSViewController {
         tableView.selectedRowIndexes.compactMap { sortedItems.indices.contains($0) ? sortedItems[$0] : nil }
     }
 
-    private let tableView = FileTableView()
+    let tableView = FileTableView()
     private let scrollView = NSScrollView()
     private let unavailableLabel = NSTextField(labelWithString: "")
-    private let dateFormatter: DateFormatter = {
+    let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter
     }()
+
+    /// Selection (and optionally an item to rename) to apply once those items are loaded.
+    private var pendingSelection: [URL]?
+    private var pendingRename: URL?
+    /// The in-place rename in progress, if any.
+    var renaming: (item: FileItem, field: NSTextField)?
+    /// Items that arrived while renaming; applied when the rename ends.
+    var deferredItems: [FileItem]?
 
     override func loadView() {
         let container = NSView()
@@ -100,6 +160,8 @@ final class ContentViewController: NSViewController {
         tableView.target = self
         tableView.doubleAction = #selector(activateSelection)
         tableView.onActivateSelection = { [weak self] in self?.activateSelection() }
+        tableView.menu = makeContextMenu()
+        configureDragAndDrop()
 
         for column in Column.allCases {
             let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
@@ -109,7 +171,10 @@ final class ContentViewController: NSViewController {
             case .name:
                 tableColumn.width = 320
                 tableColumn.minWidth = 120
-            case .dateModified:
+            case .originalLocation:
+                tableColumn.width = 220
+                tableColumn.minWidth = 100
+            case .dateDeleted, .dateModified:
                 tableColumn.width = 150
                 tableColumn.minWidth = 100
             case .type:
@@ -122,10 +187,25 @@ final class ContentViewController: NSViewController {
             tableView.addTableColumn(tableColumn)
         }
         tableView.sortDescriptors = [NSSortDescriptor(key: Column.name.rawValue, ascending: true)]
+        applyColumnVisibility()
+    }
+
+    private func applyColumnVisibility() {
+        for column in Column.allCases where column.isRecycleBinOnly {
+            let tableColumn = tableView.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(column.rawValue))
+            tableColumn?.isHidden = mode != .recycleBin
+        }
+        if mode != .recycleBin, sort.key == .originalLocation || sort.key == .dateDeleted {
+            tableView.sortDescriptors = [NSSortDescriptor(key: Column.name.rawValue, ascending: true)]
+        }
     }
 
     /// Replaces the folder's contents, preserving the selection by URL where possible.
     func setItems(_ newItems: [FileItem]) {
+        if renaming != nil {
+            deferredItems = newItems
+            return
+        }
         unavailableLabel.isHidden = true
         scrollView.isHidden = false
 
@@ -133,12 +213,42 @@ final class ContentViewController: NSViewController {
         items = newItems
         resortAndReload()
 
-        let rowsToSelect = IndexSet(sortedItems.indices.filter { selectedURLs.contains(sortedItems[$0].url) })
+        var rowsToSelect = IndexSet(sortedItems.indices.filter { selectedURLs.contains(sortedItems[$0].url) })
+        if let pending = pendingSelection.map(Set.init) {
+            let pendingRows = IndexSet(sortedItems.indices.filter {
+                pending.contains(sortedItems[$0].url.standardizedFileURL)
+            })
+            if !pendingRows.isEmpty {
+                rowsToSelect = pendingRows
+                pendingSelection = nil
+                tableView.scrollRowToVisible(pendingRows.first ?? 0)
+            }
+        }
         tableView.selectRowIndexes(rowsToSelect, byExtendingSelection: false)
+
+        if let rename = pendingRename, sortedItems.contains(where: { $0.url.standardizedFileURL == rename }) {
+            pendingRename = nil
+            beginRenaming(rename)
+        }
+    }
+
+    /// Selects `urls` (now, or once they appear after a reload) and optionally starts renaming one.
+    func select(_ urls: [URL], renaming renameURL: URL? = nil) {
+        let wanted = Set(urls.map(\.standardizedFileURL))
+        let rows = IndexSet(sortedItems.indices.filter { wanted.contains(sortedItems[$0].url.standardizedFileURL) })
+        if rows.count == wanted.count, !rows.isEmpty {
+            tableView.selectRowIndexes(rows, byExtendingSelection: false)
+            tableView.scrollRowToVisible(rows.first ?? 0)
+            if let renameURL { beginRenaming(renameURL) }
+        } else {
+            pendingSelection = urls.map(\.standardizedFileURL)
+            pendingRename = renameURL?.standardizedFileURL
+        }
     }
 
     /// Shows a centered message instead of the table, for locations with no Details view yet.
     func showUnavailable(_ message: String) {
+        finishRenaming(commit: false)
         items = []
         sortedItems = []
         tableView.reloadData()
@@ -152,9 +262,18 @@ final class ContentViewController: NSViewController {
         tableView.reloadData()
     }
 
-    @objc private func activateSelection() {
+    private func reloadVisibleRows() {
+        let visible = tableView.rows(in: tableView.visibleRect)
+        guard visible.length > 0 else { return }
+        tableView.reloadData(
+            forRowIndexes: IndexSet(integersIn: visible.location..<visible.location + visible.length),
+            columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+        )
+    }
+
+    @objc func activateSelection() {
         let selected = selectedItems
-        guard !selected.isEmpty else { return }
+        guard !selected.isEmpty, mode != .recycleBin else { return }
         if selected.count == 1, let only = selected.first, only.isFolder {
             onNavigate?(.folder(only.url))
             return
@@ -201,6 +320,7 @@ extension ContentViewController: NSTableViewDelegate {
         if column == .name {
             cell.imageView?.image = icon(for: item)
         }
+        cell.alphaValue = cutURLs.contains(item.url.standardizedFileURL) ? 0.45 : 1
         return cell
     }
 
@@ -243,6 +363,8 @@ extension ContentViewController: NSTableViewDelegate {
     private func text(for column: Column, item: FileItem) -> String {
         switch column {
         case .name: return item.name
+        case .originalLocation: return item.originalFolderPath
+        case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
         case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""
         case .type: return item.typeDescription
         case .size: return item.size.map { FileSizeFormat.string(for: $0) } ?? ""

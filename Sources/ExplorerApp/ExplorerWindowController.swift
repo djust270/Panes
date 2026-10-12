@@ -3,6 +3,7 @@ import ExplorerCore
 
 /// One Explorer window. Owns the navigation history, loads and watches the current
 /// location, and coordinates the sidebar, toolbar, content view and status bar.
+/// File commands live in `ExplorerWindowController+FileActions.swift`.
 @MainActor
 final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     private static let frameAutosaveName = "ExplorerWindow"
@@ -10,12 +11,17 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     private(set) var history: NavigationHistory
     var onClose: (() -> Void)?
 
-    private let rootViewController = ExplorerRootViewController()
+    let rootViewController = ExplorerRootViewController()
     private let toolbarController = ExplorerToolbarController()
     private var loader = DirectoryLoader()
     private var loadTask: Task<Void, Never>?
-    private var watchTask: Task<Void, Never>?
-    private var watcher: DirectoryWatcher?
+    private var watchTasks: [Task<Void, Never>] = []
+    private var watchers: [DirectoryWatcher] = []
+    private var clipboardObserver: NSObjectProtocol?
+    /// Undo for text being edited (rename, address bar), kept apart from file operations.
+    private let textUndoManager = UndoManager()
+
+    var content: ContentViewController { rootViewController.content }
 
     init(location: ExplorerLocation) {
         history = NavigationHistory(start: location)
@@ -44,15 +50,31 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.toolbar = toolbarController.toolbar
 
-        rootViewController.content.onNavigate = { [weak self] location in
+        connectCallbacks()
+        show(location)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    private func connectCallbacks() {
+        content.onNavigate = { [weak self] location in
             self?.navigate(to: location)
         }
-        rootViewController.content.onSelectionChange = { [weak self] in
+        content.onSelectionChange = { [weak self] in
             self?.updateStatusBar()
         }
+        content.onRename = { [weak self] item, name in
+            self?.rename(item, to: name)
+        }
+        content.dropHandler = self
+        content.cutURLs = FileClipboard.shared.cutURLs
         rootViewController.navigationPane.onSelect = { [weak self] location in
             self?.navigate(to: location)
         }
+        rootViewController.navigationPane.dropHandler = self
         toolbarController.onNavigate = { [weak self] location in
             self?.navigate(to: location)
         }
@@ -69,12 +91,15 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         toolbarController.backList = { [weak self] in self?.history.backList ?? [] }
         toolbarController.forwardList = { [weak self] in self?.history.forwardList ?? [] }
 
-        show(location)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
+        clipboardObserver = NotificationCenter.default.addObserver(
+            forName: FileClipboard.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.content.cutURLs = FileClipboard.shared.cutURLs
+            }
+        }
     }
 
     func navigate(to location: ExplorerLocation) {
@@ -99,47 +124,78 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         reload()
     }
 
+    /// The real folder being shown, if any (not This PC, Home, Recycle Bin…).
+    var currentFolder: URL? { history.current.fileURL }
+
     private func show(_ location: ExplorerLocation) {
         window?.title = location.displayName
+        content.finishRenaming(commit: true)
+        switch location {
+        case .recycleBin: content.mode = .recycleBin
+        case .thisPC: content.mode = .volumes
+        default: content.mode = .folder
+        }
         rootViewController.navigationPane.select(location)
         toolbarController.update(location: location, history: history)
         reload()
         watch(location)
     }
 
-    private func reload() {
+    func reload() {
         loadTask?.cancel()
 
-        if history.current == .thisPC {
+        switch history.current {
+        case .thisPC:
             let items = VolumeLister.mountedVolumes().map { volume in
                 FileItem(url: volume.url.standardizedFileURL, name: volume.name, kind: .directory)
             }
-            rootViewController.content.setItems(items)
+            content.setItems(items)
             updateStatusBar()
-            return
-        }
-
-        guard let url = history.current.fileURL else {
-            rootViewController.content.showUnavailable("\(history.current.displayName) isn't available yet.")
+        case .recycleBin:
+            loadRecycleBin()
+        case .folder(let url):
+            loadTask = Task { [weak self, loader] in
+                do {
+                    let items = try await loader.contents(of: url)
+                    guard !Task.isCancelled else { return }
+                    self?.content.setItems(items)
+                    self?.updateStatusBar()
+                } catch is CancellationError {
+                    // Superseded by a newer load.
+                } catch {
+                    self?.rootViewController.statusBar.text = error.localizedDescription
+                }
+            }
+        case .home, .network, .search:
+            content.showUnavailable("\(history.current.displayName) isn't available yet.")
             rootViewController.statusBar.text = ""
-            return
         }
-        loadTask = Task { [weak self, loader] in
-            do {
-                let items = try await loader.contents(of: url)
-                guard !Task.isCancelled else { return }
-                self?.rootViewController.content.setItems(items)
-                self?.updateStatusBar()
-            } catch is CancellationError {
-                // Superseded by a newer load.
-            } catch {
-                self?.rootViewController.statusBar.text = error.localizedDescription
+    }
+
+    private func loadRecycleBin() {
+        let includeHidden = loader.options.includeHidden
+        loadTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try RecycleBin.contents(includeHidden: includeHidden) }
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            switch result {
+            case .success(let items):
+                content.setItems(items)
+                updateStatusBar()
+            case .failure(is RecycleBin.AccessDenied):
+                content.showUnavailable(
+                    "Explorer needs Full Disk Access to show the Recycle Bin.\n"
+                        + "Turn it on in System Settings › Privacy & Security › Full Disk Access."
+                )
+                rootViewController.statusBar.text = ""
+            case .failure(let error):
+                rootViewController.statusBar.text = error.localizedDescription
             }
         }
     }
 
-    private func updateStatusBar() {
-        let content = rootViewController.content
+    func updateStatusBar() {
         let selected = content.selectedItems
         let selectedSize: Int64? = selected.allSatisfy(\.isFolder)
             ? nil
@@ -152,26 +208,38 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func watch(_ location: ExplorerLocation) {
-        watchTask?.cancel()
-        watcher?.stop()
-        guard let url = location.fileURL else {
-            watcher = nil
-            return
+        watchTasks.forEach { $0.cancel() }
+        watchers.forEach { $0.stop() }
+
+        let directories: [URL]
+        switch location {
+        case .folder(let url): directories = [url]
+        case .recycleBin: directories = RecycleBin.trashDirectories()
+        default: directories = []
         }
-        let watcher = DirectoryWatcher(directory: url)
-        self.watcher = watcher
-        let changes = watcher.start()
-        watchTask = Task { [weak self] in
-            for await _ in changes {
-                self?.reload()
+        watchers = directories.map { DirectoryWatcher(directory: $0) }
+        watchTasks = watchers.map { watcher in
+            let changes = watcher.start()
+            return Task { [weak self] in
+                for await _ in changes {
+                    self?.reload()
+                }
             }
         }
     }
 
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        window.firstResponder is NSText ? textUndoManager : FileOperationCenter.shared.undoManager
+    }
+
     func windowWillClose(_ notification: Notification) {
+        content.finishRenaming(commit: true)
         loadTask?.cancel()
-        watchTask?.cancel()
-        watcher?.stop()
+        watchTasks.forEach { $0.cancel() }
+        watchers.forEach { $0.stop() }
+        if let clipboardObserver {
+            NotificationCenter.default.removeObserver(clipboardObserver)
+        }
         onClose?()
     }
 }

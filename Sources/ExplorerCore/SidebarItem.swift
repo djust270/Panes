@@ -38,7 +38,8 @@ public enum SidebarTree {
 
     public static let thisPCID = "this-pc"
 
-    /// Home, Desktop/Downloads/Documents/Pictures/Music/Videos, This PC, Network — in that order.
+    /// Home, Desktop/Downloads/Documents/Pictures/Music/Videos, This PC, Network, Recycle Bin —
+    /// in that order.
     public static func roots() -> [SidebarItem] {
         var items = [SidebarItem(id: "home", title: "Home", symbolName: "house", location: .home)]
 
@@ -62,6 +63,7 @@ public enum SidebarTree {
             isExpandable: true
         ))
         items.append(SidebarItem(id: "network", title: "Network", symbolName: "network", location: .network))
+        items.append(SidebarItem(id: "recycle-bin", title: "Recycle Bin", symbolName: "trash", location: .recycleBin))
         return items
     }
 

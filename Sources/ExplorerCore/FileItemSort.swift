@@ -6,6 +6,10 @@ public enum FileItemSortKey: String, Sendable, CaseIterable {
     case dateModified
     case type
     case size
+    /// Recycle Bin only.
+    case originalLocation
+    /// Recycle Bin only.
+    case dateDeleted
 }
 
 /// A Details-view sort: a key plus direction, matching Windows Explorer's behaviour that
@@ -42,6 +46,10 @@ public struct FileItemSort: Sendable, Equatable {
             return nameOrder0(lhs.typeDescription, rhs.typeDescription)
         case .size:
             return sizeOrder(lhs.size, rhs.size)
+        case .originalLocation:
+            return nameOrder0(lhs.originalFolderPath, rhs.originalFolderPath)
+        case .dateDeleted:
+            return order(lhs.trashInfo?.dateDeleted ?? .distantPast, rhs.trashInfo?.dateDeleted ?? .distantPast)
         }
     }
 
@@ -72,5 +80,12 @@ public struct FileItemSort: Sendable, Equatable {
         if lhs < rhs { return -1 }
         if lhs > rhs { return 1 }
         return 0
+    }
+}
+
+extension FileItem {
+    /// The Recycle Bin's "Original Location" column: the folder the item was deleted from.
+    public var originalFolderPath: String {
+        trashInfo?.originalURL?.deletingLastPathComponent().path ?? ""
     }
 }

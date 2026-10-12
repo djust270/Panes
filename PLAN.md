@@ -68,6 +68,19 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
 
 **Exit criteria:** correct behaviour across volumes (APFS, exFAT, SMB), including cancel mid-operation and conflicts.
 
+**Status: implemented, UI not yet checked by hand** (boxes stay unticked until it is).
+- Engine (`FileOperationTask`) is covered by unit tests on APFS, and by `EXPLORER_VOLUME_TESTS=1 scripts/test.sh`
+  against a real exFAT disk image: cross-volume move + undo, xattrs surviving exFAT, cancel mid-file removing the
+  partial copy, case-insensitive conflicts. **SMB is untested.**
+- Copies use `copyfile(3)` (APFS clones when possible); replacements are copied beside the original and swapped in,
+  so a cancelled replace keeps the old file.
+- Operations run concurrently (as on Windows), each on its own thread, rather than strictly queued.
+- Undo/redo is app-wide (`UndoManager`), ⌘Z / ⇧⌘Z for now; Ctrl+Z / Ctrl+Y arrive with Phase 4's keyboard scheme.
+  Undoing a copy or a new item moves it to the Trash; replaced files are not restored.
+- Recycle Bin reads `~/.Trash` and per-volume `.Trashes/<uid>`. Restore uses Finder's "Put Back" records from the
+  Trash's `.DS_Store` and this app's own log. Listing `~/.Trash` requires Full Disk Access (Phase 7 onboarding);
+  without it the view explains this.
+
 ## Phase 3 — Views & panes (~3 weeks)
 - View modes: Extra large / Large / Medium / Small icons, List, Details, Tiles, Content (`NSCollectionView` custom layouts)
 - Async thumbnails via `QLThumbnailGenerator` with an LRU cache

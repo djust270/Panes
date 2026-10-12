@@ -54,3 +54,28 @@ import Testing
         #expect(sorted.map(\.name) == ["a", "b"])
     }
 }
+
+@Suite struct RecycleBinSortTests {
+    private func trashed(_ name: String, from folder: String, deleted: TimeInterval) -> FileItem {
+        FileItem(
+            url: URL(fileURLWithPath: "/trash/\(name)"),
+            name: name,
+            kind: .file,
+            trashInfo: TrashInfo(
+                originalURL: URL(fileURLWithPath: "\(folder)/\(name)"),
+                dateDeleted: Date(timeIntervalSince1970: deleted)
+            )
+        )
+    }
+
+    @Test func sortsByOriginalLocationAndDateDeleted() {
+        let items = [
+            trashed("a", from: "/Users/me/Documents", deleted: 300),
+            trashed("b", from: "/Users/me/Desktop", deleted: 100),
+            trashed("c", from: "/Users/me/Downloads", deleted: 200),
+        ]
+        #expect(FileItemSort(key: .originalLocation).sorted(items).map(\.name) == ["b", "a", "c"])
+        #expect(FileItemSort(key: .dateDeleted, ascending: false).sorted(items).map(\.name) == ["a", "c", "b"])
+        #expect(items[0].originalFolderPath == "/Users/me/Documents")
+    }
+}

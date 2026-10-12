@@ -15,6 +15,7 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 | Lint | `scripts/lint.sh` (needs `brew install swiftlint`) |
 | Test | `scripts/test.sh` |
 | Test incl. 100k-file perf check | `EXPLORER_PERF_TESTS=1 scripts/test.sh` |
+| Test incl. cross-volume ops on an exFAT disk image | `EXPLORER_VOLUME_TESTS=1 scripts/test.sh` |
 | Build `build/Explorer.app` | `scripts/bundle.sh` |
 | Signed + notarized build | `SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh && scripts/notarize.sh` |
 
@@ -22,7 +23,8 @@ To work in Xcode, open `Package.swift`.
 
 ## Layout
 - `Sources/ExplorerCore` — UI-free model: `FileItem`, `DirectoryLoader` (fast `getattrlistbulk` path with
-  `FileManager` fallback), `DirectoryWatcher` (FSEvents), `ExplorerLocation`, `NavigationHistory`.
-  Must not import AppKit.
+  `FileManager` fallback), `DirectoryWatcher` (FSEvents), `ExplorerLocation`, `NavigationHistory`, and the
+  file-operation engine (`FileOperationTask`: copy/move/trash/delete/rename/create with conflicts, pause/cancel
+  and undo inverses), `FileNaming`, `RecycleBin`. Must not import AppKit.
 - `Sources/ExplorerApp` — AppKit UI.
 - `Tests/ExplorerCoreTests` — Swift Testing suites.

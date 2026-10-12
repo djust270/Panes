@@ -26,6 +26,7 @@ jobs:
         run: scripts/test.sh
         env:
           EXPLORER_PERF_TESTS: "1"
+          EXPLORER_VOLUME_TESTS: "1"
 
       - name: Bundle (ad-hoc signed)
         run: scripts/bundle.sh

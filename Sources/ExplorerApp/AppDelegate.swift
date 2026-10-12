@@ -25,6 +25,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Another app may have replaced the clipboard, ending a pending cut.
+        FileClipboard.shared.refresh()
+    }
+
+    /// Quitting mid-operation cancels it and waits for the cleanup (partial copies are removed)
+    /// rather than leaving half-written files behind.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let center = FileOperationCenter.shared
+        guard center.hasRunningOperations else { return .terminateNow }
+
+        let alert = NSAlert()
+        alert.messageText = "File operations are still in progress."
+        alert.informativeText = "If you quit now, they will be cancelled."
+        alert.addButton(withTitle: "Cancel Operations and Quit")
+        alert.addButton(withTitle: "Don’t Quit")
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+
+        center.cancelAll()
+        Task {
+            while center.hasRunningOperations {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
     }

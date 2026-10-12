@@ -28,3 +28,27 @@ final class TemporaryDirectory {
         return dir
     }
 }
+
+extension TemporaryDirectory {
+    func path(_ relative: String) -> URL {
+        url.appendingPathComponent(relative)
+    }
+
+    func exists(_ relative: String) -> Bool {
+        var info = stat()
+        return lstat(path(relative).path, &info) == 0
+    }
+
+    func contents(_ relative: String) throws -> String {
+        try String(contentsOf: path(relative), encoding: .utf8)
+    }
+
+    /// Creates a file at a relative path, making intermediate folders.
+    @discardableResult
+    func createFile(at relative: String, contents: String = "") throws -> URL {
+        let file = path(relative)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(contents.utf8).write(to: file)
+        return file
+    }
+}

@@ -2,10 +2,11 @@ import AppKit
 import ExplorerCore
 
 /// Navigation pane: Home, the well-known folders, This PC (lazily expanded to mounted
-/// volumes), and Network.
+/// volumes), Network and the Recycle Bin. Folders and the Recycle Bin accept drops.
 @MainActor
 final class NavigationPaneViewController: NSViewController {
     var onSelect: ((ExplorerLocation) -> Void)?
+    weak var dropHandler: FileDropHandling?
 
     private let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
@@ -25,6 +26,7 @@ final class NavigationPaneViewController: NSViewController {
         outlineView.delegate = self
         outlineView.autosaveExpandedItems = true
         outlineView.autosaveName = "NavigationPaneOutline"
+        outlineView.registerForDraggedTypes([.fileURL])
 
         scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
@@ -114,6 +116,43 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, itemForPersistentObject object: Any) -> Any? {
         guard let id = object as? String else { return nil }
         return SidebarTree.roots().first { $0.id == id }
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        validateDrop info: NSDraggingInfo,
+        proposedItem item: Any?,
+        proposedChildIndex index: Int
+    ) -> NSDragOperation {
+        guard index == NSOutlineViewDropOnItemIndex,
+              let location = dropLocation(for: item),
+              let urls = ContentViewController.fileURLs(in: info.draggingPasteboard) else { return [] }
+        return dropHandler?.dropOperation(for: urls, into: location, sourceMask: info.draggingSourceOperationMask) ?? []
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        acceptDrop info: NSDraggingInfo,
+        item: Any?,
+        childIndex index: Int
+    ) -> Bool {
+        guard let dropHandler,
+              let location = dropLocation(for: item),
+              let urls = ContentViewController.fileURLs(in: info.draggingPasteboard) else { return false }
+        let mask = info.draggingSourceOperationMask
+        let operation = dropHandler.dropOperation(for: urls, into: location, sourceMask: mask)
+        guard !operation.isEmpty else { return false }
+        dropHandler.performDrop(of: urls, into: location, operation: operation)
+        return true
+    }
+
+    /// Rows that accept drops: real folders (including volumes) and the Recycle Bin.
+    private func dropLocation(for item: Any?) -> ExplorerLocation? {
+        guard let location = (item as? SidebarItem)?.location else { return nil }
+        switch location {
+        case .folder, .recycleBin: return location
+        default: return nil
+        }
     }
 }
 

@@ -23,6 +23,8 @@ public struct FileItem: Sendable, Hashable, Identifiable {
     public let isHidden: Bool
     /// Uniform Type Identifier, e.g. `public.jpeg`.
     public let typeIdentifier: String?
+    /// Where a Recycle Bin item came from; `nil` outside the Recycle Bin.
+    public var trashInfo: TrashInfo?
 
     public var id: URL { url }
 
@@ -40,7 +42,8 @@ public struct FileItem: Sendable, Hashable, Identifiable {
         dateModified: Date? = nil,
         dateCreated: Date? = nil,
         isHidden: Bool = false,
-        typeIdentifier: String? = nil
+        typeIdentifier: String? = nil,
+        trashInfo: TrashInfo? = nil
     ) {
         self.url = url
         self.name = name
@@ -50,6 +53,19 @@ public struct FileItem: Sendable, Hashable, Identifiable {
         self.dateCreated = dateCreated
         self.isHidden = isHidden
         self.typeIdentifier = typeIdentifier
+        self.trashInfo = trashInfo
+    }
+}
+
+/// Recycle Bin details for a trashed item.
+public struct TrashInfo: Sendable, Hashable {
+    /// The item's path before it was deleted, if known.
+    public let originalURL: URL?
+    public let dateDeleted: Date?
+
+    public init(originalURL: URL?, dateDeleted: Date?) {
+        self.originalURL = originalURL
+        self.dateDeleted = dateDeleted
     }
 }
 
