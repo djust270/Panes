@@ -58,20 +58,20 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
 **Exit criteria:** browse the whole disk keyboard-only; external changes appear live.
 
 ## Phase 2 — File operations (~3 weeks)
-- Cut / Copy / Paste with real Windows "cut" semantics (dimmed cut items, move on paste)
-- Rename in place (F2, selects name without extension), New Folder, New → Text file
-- Delete → Trash; Shift+Delete → permanent delete with confirmation
-- **Operation engine**: queued background operations, Windows-style progress dialog (speed graph, pause/cancel), "Replace or Skip Files" conflict dialog with "Compare info"
-- Undo/Redo (Ctrl+Z / Ctrl+Y) for rename, move, copy, delete
-- Drag & drop within the app, with Finder, and with other apps (Ctrl = copy, Shift = move)
-- Recycle Bin virtual location (`~/.Trash` + per-volume trashes) with Restore / Empty
+- [x] Cut / Copy / Paste with real Windows "cut" semantics (dimmed cut items, move on paste)
+- [x] Rename in place (F2, selects name without extension), New Folder, New → Text file
+- [x] Delete → Trash; Shift+Delete → permanent delete with confirmation
+- [x] **Operation engine**: queued background operations, Windows-style progress dialog (speed graph, pause/cancel), "Replace or Skip Files" conflict dialog with "Compare info"
+- [x] Undo/Redo (Ctrl+Z / Ctrl+Y) for rename, move, copy, delete
+- [x] Drag & drop within the app, with Finder, and with other apps (Ctrl = copy, Shift = move)
+- [x] Recycle Bin virtual location (`~/.Trash` + per-volume trashes) with Restore / Empty
 
 **Exit criteria:** correct behaviour across volumes (APFS, exFAT, SMB), including cancel mid-operation and conflicts.
 
-**Status: implemented, UI not yet checked by hand** (boxes stay unticked until it is).
+**Status: complete** (checked by hand). File operations on SMB shares are still untested.
 - Engine (`FileOperationTask`) is covered by unit tests on APFS, and by `EXPLORER_VOLUME_TESTS=1 scripts/test.sh`
   against a real exFAT disk image: cross-volume move + undo, xattrs surviving exFAT, cancel mid-file removing the
-  partial copy, case-insensitive conflicts. **SMB is untested.**
+  partial copy, case-insensitive conflicts.
 - Copies use `copyfile(3)` (APFS clones when possible); replacements are copied beside the original and swapped in,
   so a cancelled replace keeps the old file.
 - Operations run concurrently (as on Windows), each on its own thread, rather than strictly queued.
