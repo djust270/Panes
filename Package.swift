@@ -15,7 +15,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "ExplorerApp",
-            dependencies: ["ExplorerCore"]
+            dependencies: ["ExplorerCore"],
+            linkerSettings: [.linkedFramework("NetFS")]
         ),
         .testTarget(
             name: "ExplorerCoreTests",

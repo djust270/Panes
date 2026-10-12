@@ -3,9 +3,10 @@ import ExplorerCore
 
 /// Address bar: breadcrumb segments (title + chevron-dropdown-to-children) built from
 /// `ExplorerLocation.ancestry`, or — when the user clicks empty background — an editable
-/// path text field.
+/// path text field that also accepts network paths (`\\server\share`, `smb://…`).
 final class BreadcrumbBarView: NSView {
     var onNavigate: ((ExplorerLocation) -> Void)?
+    var onNetworkPath: ((NetworkPath) -> Void)?
 
     private let scrollView = NSScrollView()
     private let stackView = NSStackView()
@@ -93,7 +94,13 @@ final class BreadcrumbBarView: NSView {
             finishEditingUI()
             return
         }
-        let path = pathField.stringValue
+        let input = pathField.stringValue
+        if let networkPath = NetworkPath(input) {
+            finishEditingUI()
+            onNetworkPath?(networkPath)
+            return
+        }
+        let path = (input.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
             NSSound.beep()

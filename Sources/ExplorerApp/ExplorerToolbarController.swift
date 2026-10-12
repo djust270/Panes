@@ -26,6 +26,9 @@ final class ExplorerToolbarController: NSObject, NSToolbarDelegate {
     var onNavigate: ((ExplorerLocation) -> Void)? {
         didSet { breadcrumbBar.onNavigate = onNavigate }
     }
+    var onNetworkPath: ((NetworkPath) -> Void)? {
+        didSet { breadcrumbBar.onNetworkPath = onNetworkPath }
+    }
 
     private let backItem = NSMenuToolbarItem(itemIdentifier: Item.back)
     private let forwardItem = NSMenuToolbarItem(itemIdentifier: Item.forward)

@@ -78,6 +78,9 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         toolbarController.onNavigate = { [weak self] location in
             self?.navigate(to: location)
         }
+        toolbarController.onNetworkPath = { [weak self] path in
+            self?.connect(to: path)
+        }
         toolbarController.onGoBack = { [weak self] steps in
             guard let self, let destination = history.goBack(steps: steps) else { return }
             show(destination)
@@ -105,6 +108,30 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     func navigate(to location: ExplorerLocation) {
         history.navigate(to: location)
         show(location)
+    }
+
+    /// Mounts a network share typed into the address bar, then opens it.
+    func connect(to path: NetworkPath) {
+        rootViewController.statusBar.text = "Connecting to \(path.shareURL.absoluteString)…"
+        Task {
+            switch await NetworkShareMounter.mount(path) {
+            case .mounted(let folder):
+                navigate(to: .folder(folder))
+            case .cancelled:
+                updateStatusBar()
+            case .failed(let message):
+                updateStatusBar()
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Couldn’t connect to “\(path.shareURL.absoluteString)”"
+                alert.informativeText = message
+                if let window {
+                    _ = await alert.beginSheetModal(for: window)
+                } else {
+                    alert.runModal()
+                }
+            }
+        }
     }
 
     func navigateUp() {

@@ -80,6 +80,9 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
 - Recycle Bin reads `~/.Trash` and per-volume `.Trashes/<uid>`. Restore uses Finder's "Put Back" records from the
   Trash's `.DS_Store` and this app's own log. Listing `~/.Trash` requires Full Disk Access (Phase 7 onboarding);
   without it the view explains this.
+- Pulled forward from Phase 6: the address bar accepts `\\server\share\folder`, `//server/share` and
+  `smb://` / `afp://` / `nfs://` URLs, mounting via NetFS (system sign-in dialog, share picker for a bare server)
+  or reusing an existing mount.
 
 ## Phase 3 — Views & panes (~3 weeks)
 - View modes: Extra large / Large / Medium / Small icons, List, Details, Tiles, Content (`NSCollectionView` custom layouts)
