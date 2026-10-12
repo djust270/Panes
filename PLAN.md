@@ -85,15 +85,16 @@ path took ~1.2 s and is kept as a fallback for file systems that don't support b
   or reusing an existing mount.
 
 ## Phase 3 — Views & panes (~3 weeks)
-- View modes: Extra large / Large / Medium / Small icons, List, Details, Tiles, Content (`NSCollectionView` custom layouts)
-- Async thumbnails via `QLThumbnailGenerator` with an LRU cache
-- Sort by / Group by with collapsible group headers ("Today", "Last week", "A–H", Type…)
-- Column chooser (right-click header): Date created, Tags, Dimensions, Duration…
-- Per-folder view memory + "Apply to all folders"
-- **Preview pane** (`QLPreviewView`) and **Details pane** (metadata + thumbnail)
-- Item checkboxes, Ctrl/Shift multi-select, rubber-band select, Select all / none / invert
+- [x] View modes: Extra large / Large / Medium / Small icons, List, Details, Tiles, Content (`NSCollectionView` custom layouts)
+- [x] Async thumbnails via `QLThumbnailGenerator` with an LRU cache
+- [x] Sort by / Group by with collapsible group headers ("Today", "Last week", "A–H", Type…)
+- [x] Column chooser (right-click header): Date created, Tags, Dimensions, Duration…
+- [x] Per-folder view memory + "Apply to all folders"
+- [x] **Preview pane** (`QLPreviewView`) and **Details pane** (metadata + thumbnail)
+- [x] Item checkboxes, ⌘/Shift multi-select, rubber-band select, Select all / none / invert
+- [ ] Ctrl+click to toggle selection — moved to Phase 4's Windows keyboard scheme (on the Mac, Ctrl+click is right-click)
 
-**Status: implemented, UI not yet checked by hand** (boxes stay unticked until it is).
+**Status: complete** (checked by hand), apart from Ctrl+click.
 - Details stays an `NSTableView` (group headers are group rows); the other seven layouts share one `NSCollectionView`
   with a flow layout per mode. Both render `FileListContent` (ExplorerCore: sort → group → collapse), and selection
   is kept by URL so it survives reloads and layout switches. Layouts are ⌘1…⌘8 (Windows' Ctrl+Shift+1…8 would
