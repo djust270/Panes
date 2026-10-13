@@ -55,7 +55,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     private static func defaultWidth(_ column: FileColumn) -> CGFloat {
         switch column {
         case .name: return 320
-        case .originalLocation: return 220
+        case .originalLocation, .folder: return 260
         case .dateDeleted, .dateModified, .dateCreated: return 150
         case .type: return 120
         case .tags: return 120
@@ -181,6 +181,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         return cell
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     func text(for column: FileColumn, item: FileItem) -> String {
         switch column {
         case .name: return item.name
@@ -193,6 +194,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .tags: return item.properties?.tagsText ?? ""
         case .dimensions: return item.properties?.dimensionsText ?? ""
         case .duration: return item.properties?.durationText ?? ""
+        case .folder: return Self.displayPath(item.folderPath)
         }
     }
 

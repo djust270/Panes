@@ -26,20 +26,23 @@ public struct FolderViewSettings: Sendable, Hashable, Codable {
         columns: [.name, .originalLocation, .dateDeleted, .size, .type, .dateModified]
     )
 
+    public static let searchDefault = FolderViewSettings(
+        columns: [.name, .dateModified, .type, .size, .folder]
+    )
+
     /// Whether the items need `FileProperties` (tags, dimensions, duration) for what's shown.
     public var needsProperties: Bool {
         sort.key.needsProperties || (viewMode == .details && columns.contains(where: \.needsProperties))
     }
 
-    /// Drops Recycle Bin–only columns, sorting and grouping outside the Recycle Bin, and makes
-    /// sure Name is shown first.
-    public func sanitized(inRecycleBin: Bool) -> FolderViewSettings {
+    /// Drops columns, sorting and grouping that belong to other kinds of list (e.g. Recycle
+    /// Bin–only columns elsewhere), and makes sure Name is shown first.
+    public func sanitized(for kind: FileListKind) -> FolderViewSettings {
+        func fits(_ onlyIn: FileListKind?) -> Bool { onlyIn == nil || onlyIn == kind }
         var result = self
-        if !inRecycleBin {
-            result.columns.removeAll(where: \.isRecycleBinOnly)
-            if result.sort.key.isRecycleBinOnly { result.sort = FileItemSort() }
-            if result.grouping?.key.isRecycleBinOnly == true { result.grouping = nil }
-        }
+        result.columns.removeAll { !fits($0.onlyIn) }
+        if !fits(result.sort.key.onlyIn) { result.sort = FileItemSort() }
+        if let grouping = result.grouping, !fits(grouping.key.onlyIn) { result.grouping = nil }
         var seen = Set<FileColumn>()
         result.columns = [.name] + result.columns.filter { $0 != .name && seen.insert($0).inserted }
         return result
@@ -54,7 +57,17 @@ extension ExplorerLocation {
         case .folder(let url): return "folder:" + url.standardizedFileURL.path
         case .recycleBin: return "recycle-bin"
         case .thisPC: return "this-pc"
-        case .home, .network, .search: return nil
+        case .search: return "search"
+        case .home, .network: return nil
+        }
+    }
+
+    /// The kind of file list this location shows.
+    public var listKind: FileListKind {
+        switch self {
+        case .recycleBin: return .recycleBin
+        case .search: return .searchResults
+        default: return .folder
         }
     }
 }
@@ -98,11 +111,15 @@ public final class FolderViewSettingsStore {
     }
 
     public func settings(for location: ExplorerLocation) -> FolderViewSettings {
-        let inRecycleBin = location == .recycleBin
+        let kind = location.listKind
         if let key = location.viewSettingsKey, let entry = storage.entries[key] {
-            return entry.settings.sanitized(inRecycleBin: inRecycleBin)
+            return entry.settings.sanitized(for: kind)
         }
-        return inRecycleBin ? .recycleBinDefault : folderDefault
+        switch kind {
+        case .recycleBin: return .recycleBinDefault
+        case .searchResults: return .searchDefault
+        case .folder: return folderDefault
+        }
     }
 
     public func save(_ settings: FolderViewSettings, for location: ExplorerLocation, now: Date = Date()) {
@@ -118,9 +135,9 @@ public final class FolderViewSettingsStore {
     }
 
     /// Makes `settings` the view of every regular folder: the new default, replacing any
-    /// folder's own view. The Recycle Bin and This PC keep theirs.
+    /// folder's own view. The Recycle Bin, This PC and search results keep theirs.
     public func applyToAllFolders(_ settings: FolderViewSettings) {
-        storage.folderDefault = settings.sanitized(inRecycleBin: false)
+        storage.folderDefault = settings.sanitized(for: .folder)
         storage.entries = storage.entries.filter { !$0.key.hasPrefix(Self.folderPrefix) }
         persist()
     }

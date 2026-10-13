@@ -14,6 +14,8 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
     case originalLocation
     /// Recycle Bin only.
     case dateDeleted
+    /// Search results only.
+    case folder
 
     public var title: String {
         switch self {
@@ -27,13 +29,21 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
         case .duration: return "Duration"
         case .originalLocation: return "Original Location"
         case .dateDeleted: return "Date Deleted"
+        case .folder: return "Folder"
         }
     }
 
     /// Whether sorting by this key requires reading `FileProperties`.
     public var needsProperties: Bool { self == .tags || self == .dimensions || self == .duration }
 
-    public var isRecycleBinOnly: Bool { self == .originalLocation || self == .dateDeleted }
+    /// The only kind of list this key applies to, if it's specific to one.
+    public var onlyIn: FileListKind? {
+        switch self {
+        case .originalLocation, .dateDeleted: return .recycleBin
+        case .folder: return .searchResults
+        default: return nil
+        }
+    }
 }
 
 /// A Details-view sort: a key plus direction, matching Windows Explorer's behaviour that
@@ -60,6 +70,7 @@ public struct FileItemSort: Sendable, Hashable, Codable {
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func compare(_ lhs: FileItem, _ rhs: FileItem) -> Int {
         switch key {
         case .name:
@@ -85,6 +96,8 @@ public struct FileItemSort: Sendable, Hashable, Codable {
             return nameOrder0(lhs.originalFolderPath, rhs.originalFolderPath)
         case .dateDeleted:
             return order(lhs.trashInfo?.dateDeleted ?? .distantPast, rhs.trashInfo?.dateDeleted ?? .distantPast)
+        case .folder:
+            return nameOrder0(lhs.folderPath, rhs.folderPath)
         }
     }
 
@@ -133,5 +146,10 @@ extension FileItem {
     /// The Recycle Bin's "Original Location" column: the folder the item was deleted from.
     public var originalFolderPath: String {
         trashInfo?.originalURL?.deletingLastPathComponent().path ?? ""
+    }
+
+    /// Search results' "Folder" column: the folder holding the item.
+    public var folderPath: String {
+        url.deletingLastPathComponent().path
     }
 }

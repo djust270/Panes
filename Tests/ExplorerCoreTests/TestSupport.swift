@@ -52,3 +52,17 @@ extension TemporaryDirectory {
         return file
     }
 }
+
+/// A throwaway `UserDefaults` domain, removed when the value is deinitialised.
+final class TemporaryDefaults {
+    let name = "ExplorerCoreTests-\(UUID().uuidString)"
+    let defaults: UserDefaults
+
+    init() {
+        defaults = UserDefaults(suiteName: name) ?? .standard
+    }
+
+    deinit {
+        defaults.removePersistentDomain(forName: name)
+    }
+}

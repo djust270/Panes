@@ -96,6 +96,13 @@ extension ExplorerTabController {
             content.select(shown, renaming: renamingResult ? shown.first : nil)
             reload()
         }
+        // Search results and Home aren't watched: drop what was moved or deleted.
+        if inSearchResults {
+            content.removeMissingItems()
+            updateStatusBar()
+        } else if history.current == .home {
+            reload()
+        }
         // Copy/move/delete failures were already handled by the operation's Retry/Skip prompt.
         switch request {
         case .rename, .createFolder, .createFile:
@@ -198,18 +205,20 @@ extension ExplorerTabController: NSMenuItemValidation {
         let location = history.current
         let inFolder = currentFolder != nil
         let inRecycleBin = location == .recycleBin
+        // Lists of real files: folders, search results and Home.
+        let listsFiles = inFolder || inSearchResults || location == .home
 
         switch menuItem.action {
         case #selector(openSelection(_:)):
             return !selection.isEmpty && !inRecycleBin
         case #selector(cut(_:)), #selector(delete(_:)), #selector(deletePermanently(_:)):
-            return !selection.isEmpty && (inFolder || inRecycleBin)
+            return !selection.isEmpty && (listsFiles || inRecycleBin)
         case #selector(copy(_:)):
-            return !selection.isEmpty && inFolder
+            return !selection.isEmpty && listsFiles
         case #selector(paste(_:)):
             return inFolder && FileClipboard.shared.canPaste
         case #selector(renameSelection(_:)):
-            return selection.count == 1 && inFolder
+            return selection.count == 1 && (inFolder || inSearchResults)
         case #selector(newFolder(_:)), #selector(newTextDocument(_:)):
             return inFolder
         case #selector(restoreSelection(_:)):
@@ -217,7 +226,8 @@ extension ExplorerTabController: NSMenuItemValidation {
         case #selector(restoreAll(_:)), #selector(emptyRecycleBin(_:)):
             return inRecycleBin && !content.allItems.isEmpty
         default:
-            return validateViewMenuItem(menuItem) ?? validateCommandMenuItem(menuItem) ?? true
+            return validateViewMenuItem(menuItem) ?? validateCommandMenuItem(menuItem)
+                ?? validateSearchMenuItem(menuItem) ?? true
         }
     }
 }

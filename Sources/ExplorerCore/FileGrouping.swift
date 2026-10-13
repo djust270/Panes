@@ -11,6 +11,8 @@ public enum FileGroupKey: String, Sendable, Codable, CaseIterable {
     case originalLocation
     /// Recycle Bin only.
     case dateDeleted
+    /// Search results only.
+    case folder
 
     public var title: String {
         switch self {
@@ -21,6 +23,7 @@ public enum FileGroupKey: String, Sendable, Codable, CaseIterable {
         case .size: return "Size"
         case .originalLocation: return "Original Location"
         case .dateDeleted: return "Date Deleted"
+        case .folder: return "Folder"
         }
     }
 
@@ -32,7 +35,14 @@ public enum FileGroupKey: String, Sendable, Codable, CaseIterable {
         }
     }
 
-    public var isRecycleBinOnly: Bool { self == .originalLocation || self == .dateDeleted }
+    /// The only kind of list this key applies to, if it's specific to one.
+    public var onlyIn: FileListKind? {
+        switch self {
+        case .originalLocation, .dateDeleted: return .recycleBin
+        case .folder: return .searchResults
+        default: return nil
+        }
+    }
 }
 
 /// A Group by choice: key plus the order of the groups themselves.
@@ -105,6 +115,8 @@ public struct FileGrouper: Sendable {
         case .originalLocation:
             let path = item.originalFolderPath
             return path.isEmpty ? .unspecified : Bucket(rank: 0, title: path)
+        case .folder:
+            return Bucket(rank: 0, title: item.folderPath)
         }
     }
 

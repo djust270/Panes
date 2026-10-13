@@ -2,7 +2,8 @@ import AppKit
 import ExplorerCore
 import SwiftUI
 
-/// Settings (⌘,): keyboard scheme, theme, accent colour, caption buttons and view options.
+/// Settings (⌘,): keyboard scheme, theme, accent colour, start location, caption buttons and
+/// view options.
 @MainActor
 final class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
@@ -29,6 +30,7 @@ private struct SettingsView: View {
     @State private var captionButtons = AppSettings.windowsCaptionButtons
     @State private var compactView = AppSettings.compactView
     @State private var hiddenFiles = AppSettings.showsHiddenFiles
+    @State private var startLocation = AppSettings.startLocation
 
     var body: some View {
         Form {
@@ -52,6 +54,9 @@ private struct SettingsView: View {
                 }
             }
             Section {
+                Picker("Open Explorer to:", selection: bind($startLocation) { AppSettings.startLocation = $0 }) {
+                    ForEach(AppSettings.StartLocation.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
                 Toggle("Window buttons on the right (Windows style)",
                        isOn: bind($captionButtons) { AppSettings.windowsCaptionButtons = $0 })
                 Toggle("Compact view", isOn: bind($compactView) { AppSettings.compactView = $0 })
@@ -69,6 +74,7 @@ private struct SettingsView: View {
             captionButtons = AppSettings.windowsCaptionButtons
             compactView = AppSettings.compactView
             hiddenFiles = AppSettings.showsHiddenFiles
+            startLocation = AppSettings.startLocation
         }
     }
 

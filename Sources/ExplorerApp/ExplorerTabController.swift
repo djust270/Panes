@@ -14,18 +14,24 @@ protocol TabHosting: AnyObject {
 /// and coordinates the navigation pane, address and command bars, content view and status
 /// bar. Sits in the responder chain while its tab is showing, so menu commands reach it.
 /// File commands live in `ExplorerTabController+FileActions.swift`, view commands in
-/// `ExplorerTabController+View.swift`.
+/// `ExplorerTabController+View.swift`, Home and search in `ExplorerTabController+Search.swift`.
 @MainActor
 final class ExplorerTabController: NSViewController {
     private(set) var history: NavigationHistory
     weak var host: TabHosting?
 
     let rootViewController = ExplorerRootViewController()
-    private var loader = DirectoryLoader()
-    private var loadTask: Task<Void, Never>?
+    private(set) var loader = DirectoryLoader()
+    var loadTask: Task<Void, Never>?
     private var watchTasks: [Task<Void, Never>] = []
     private var watchers: [DirectoryWatcher] = []
     private var observers: [NSObjectProtocol] = []
+    /// Waits out typing in the search box before searching.
+    var searchDelay: Task<Void, Never>?
+    /// The search hasn't finished its first pass.
+    var isSearchRunning = false
+    /// The search found more than `FileSearch.resultLimit` items.
+    var isSearchTruncated = false
 
     var content: ContentViewController { rootViewController.content }
     var addressBar: AddressBarView { rootViewController.addressBar }
@@ -110,6 +116,10 @@ final class ExplorerTabController: NSViewController {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.settingsDidChange() }
         })
+        observers.append(QuickAccess.observe { [weak self] in
+            guard let self, history.current == .home else { return }
+            reload()
+        })
     }
 
     private func connectAddressBar() {
@@ -130,6 +140,10 @@ final class ExplorerTabController: NSViewController {
         addressBar.onRefresh = { [weak self] in self?.reload() }
         addressBar.backList = { [weak self] in self?.history.backList ?? [] }
         addressBar.forwardList = { [weak self] in self?.history.forwardList ?? [] }
+        addressBar.onSearchChange = { [weak self] text in self?.searchTextDidChange(text) }
+        addressBar.onSearchSubmit = { [weak self] text in self?.search(for: text) }
+        addressBar.onSearchCancel = { [weak self] in self?.cancelSearch() }
+        addressBar.onSearchMoveDown = { [weak self] in self?.focusContent() }
     }
 
     private func connectViewCallbacks() {
@@ -158,6 +172,12 @@ final class ExplorerTabController: NSViewController {
 
     func navigate(to location: ExplorerLocation) {
         history.navigate(to: location)
+        show(location)
+    }
+
+    /// Shows `location` in place of the current one, without adding to the history.
+    func replace(with location: ExplorerLocation) {
+        history.replaceCurrent(with: location)
         show(location)
     }
 
@@ -199,21 +219,34 @@ final class ExplorerTabController: NSViewController {
     /// The real folder being shown, if any (not This PC, Home, Recycle Bin…).
     var currentFolder: URL? { history.current.fileURL }
 
+    var inSearchResults: Bool {
+        if case .search = history.current { return true }
+        return false
+    }
+
     private func show(_ location: ExplorerLocation) {
         title = location.displayName
         icon = Self.icon(for: location)
         host?.tabDidChangeTitle(self)
         let mode: ContentViewController.Mode
+        var settings = FolderViewMemory.store.settings(for: location)
         switch location {
         case .recycleBin: mode = .recycleBin
         case .thisPC: mode = .volumes
-        default: mode = .folder
+        case .home:
+            mode = .home
+            settings = FolderViewSettings(viewMode: .tiles)
+        case .search: mode = .search
+        case .folder(let url):
+            mode = .folder
+            QuickAccess.recordVisit(to: url)
+        case .network: mode = .folder
         }
-        let settings = FolderViewMemory.store.settings(for: location)
         content.show(mode: mode, settings: settings)
         rootViewController.statusBar.setViewMode(content.settings.viewMode)
         rootViewController.navigationPane.select(location)
         addressBar.update(location: location, history: history)
+        updateSearchField()
         reload()
         watch(location)
     }
@@ -233,6 +266,7 @@ final class ExplorerTabController: NSViewController {
 
     func reload() {
         loadTask?.cancel()
+        isSearchRunning = false
 
         switch history.current {
         case .thisPC:
@@ -256,7 +290,11 @@ final class ExplorerTabController: NSViewController {
                     self?.rootViewController.statusBar.text = error.localizedDescription
                 }
             }
-        case .home, .network, .search:
+        case .home:
+            loadHome()
+        case .search(let text, let scope):
+            runSearch(text, in: scope)
+        case .network:
             content.showUnavailable("\(history.current.displayName) isn't available yet.")
             rootViewController.statusBar.text = ""
             commandBar.validate()
@@ -299,6 +337,11 @@ final class ExplorerTabController: NSViewController {
         if !content.kindFilter.isEmpty {
             text += "  |  Filtered"
         }
+        if isSearchRunning {
+            text += "  |  Searching…"
+        } else if isSearchTruncated, inSearchResults {
+            text += "  |  Showing the first \(FileSearch.resultLimit.formatted()) results"
+        }
         rootViewController.statusBar.text = text
         commandBar.validate()
     }
@@ -339,9 +382,11 @@ final class ExplorerTabController: NSViewController {
     func close() {
         content.finishRenaming(commit: true)
         loadTask?.cancel()
+        searchDelay?.cancel()
         stopWatching()
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
+        rootViewController.navigationPane.close()
     }
 
     // MARK: Alerts

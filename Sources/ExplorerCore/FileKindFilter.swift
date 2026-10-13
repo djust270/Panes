@@ -29,7 +29,14 @@ public enum FileKind: String, Sendable, CaseIterable, Codable {
         guard item.kind != .directory else { return false }
         guard let type = item.typeIdentifier.flatMap(UTType.init) ?? UTType(filenameExtension: item.pathExtension)
         else { return false }
+        // Source code is text, but not what Windows calls a document.
+        if self == .documents, type.conforms(to: .sourceCode) || type.conforms(to: .script) { return false }
         return Self.types[self, default: []].contains { type.conforms(to: $0) }
+    }
+
+    /// Uniform Type Identifiers for a Spotlight `kMDItemContentTypeTree` query.
+    public var contentTypeIdentifiers: [String] {
+        self == .folders ? [UTType.folder.identifier] : Self.types[self, default: []].map(\.identifier)
     }
 
     private static let types: [FileKind: [UTType]] = [

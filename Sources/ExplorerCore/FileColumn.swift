@@ -12,6 +12,8 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
     case tags
     case dimensions
     case duration
+    /// Search results only: the folder holding the item.
+    case folder
 
     public var title: String {
         switch self {
@@ -25,6 +27,7 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
         case .tags: return "Tags"
         case .dimensions: return "Dimensions"
         case .duration: return "Duration"
+        case .folder: return "Folder"
         }
     }
 
@@ -40,16 +43,27 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
         case .tags: return .tags
         case .dimensions: return .dimensions
         case .duration: return .duration
+        case .folder: return .folder
         }
     }
 
-    public var isRecycleBinOnly: Bool { self == .originalLocation || self == .dateDeleted }
+    /// The only kind of list this column appears in, if it's specific to one.
+    public var onlyIn: FileListKind? { sortKey.onlyIn }
 
     /// Whether showing this column requires reading `FileProperties`.
     public var needsProperties: Bool { sortKey.needsProperties }
 
-    /// Columns that can be shown in a location of the given kind.
-    public static func available(inRecycleBin: Bool) -> [FileColumn] {
-        allCases.filter { inRecycleBin || !$0.isRecycleBinOnly }
+    /// Columns that can be shown in a list of the given kind.
+    public static func available(in kind: FileListKind) -> [FileColumn] {
+        allCases.filter { $0.onlyIn == nil || $0.onlyIn == kind }
     }
+}
+
+/// What a file list shows, which decides the columns, sorts and groups on offer.
+public enum FileListKind: Sendable, Hashable {
+    case folder
+    /// Adds Original Location and Date Deleted.
+    case recycleBin
+    /// Adds Folder.
+    case searchResults
 }

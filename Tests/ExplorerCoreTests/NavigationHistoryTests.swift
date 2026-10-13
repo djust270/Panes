@@ -68,4 +68,15 @@ import Testing
         history.navigate(to: d)
         #expect(history.backList == [c, b])
     }
+
+    @Test func replaceCurrentKeepsTheStacks() {
+        var history = NavigationHistory(start: a)
+        history.navigate(to: b)
+        history.navigate(to: c)
+        history.goBack()
+        history.replaceCurrent(with: d)
+        #expect(history.current == d)
+        #expect(history.backList == [a])
+        #expect(history.forwardList == [c])
+    }
 }

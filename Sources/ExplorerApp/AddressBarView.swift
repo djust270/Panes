@@ -1,8 +1,8 @@
 import AppKit
 import ExplorerCore
 
-/// The row under the tabs: Back, Forward, Up and Refresh, then the breadcrumb address bar.
-/// Right-clicking Back or Forward lists the history, as on Windows.
+/// The row under the tabs: Back, Forward, Up and Refresh, the breadcrumb address bar, and the
+/// search box. Right-clicking Back or Forward lists the history, as on Windows.
 @MainActor
 final class AddressBarView: NSView {
     let breadcrumbBar = BreadcrumbBarView()
@@ -23,12 +23,22 @@ final class AddressBarView: NSView {
     var onEndEditing: (() -> Void)? {
         didSet { breadcrumbBar.onEndEditing = onEndEditing }
     }
+    /// The search text changed as the user typed.
+    var onSearchChange: ((String) -> Void)?
+    /// Return in the search box.
+    var onSearchSubmit: ((String) -> Void)?
+    /// Escape, or the search box was cleared.
+    var onSearchCancel: (() -> Void)?
+    /// ↓ in the search box: on to the results.
+    var onSearchMoveDown: (() -> Void)?
 
     private let backButton = FluentButton(symbol: "arrow.left", toolTip: "Back")
     private let forwardButton = FluentButton(symbol: "arrow.right", toolTip: "Forward")
     private let upButton = FluentButton(symbol: "arrow.up", toolTip: "Up")
     private let refreshButton = FluentButton(symbol: "arrow.clockwise", toolTip: "Refresh")
     private let addressField = LayerView(color: Theme.fieldColor)
+    private let searchBox = LayerView(color: Theme.fieldColor)
+    private let searchField = SearchField()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -48,10 +58,13 @@ final class AddressBarView: NSView {
             button.menu = menu
         }
 
-        addressField.wantsLayer = true
-        addressField.layer?.cornerRadius = Theme.controlCornerRadius
-        addressField.layer?.borderWidth = 1
-        addressField.translatesAutoresizingMaskIntoConstraints = false
+        for box in [addressField, searchBox] {
+            box.wantsLayer = true
+            box.layer?.cornerRadius = Theme.controlCornerRadius
+            box.layer?.borderWidth = 1
+            box.translatesAutoresizingMaskIntoConstraints = false
+        }
+        configureSearchField()
         breadcrumbBar.translatesAutoresizingMaskIntoConstraints = false
         addressField.addSubview(breadcrumbBar)
 
@@ -60,19 +73,36 @@ final class AddressBarView: NSView {
         buttons.translatesAutoresizingMaskIntoConstraints = false
         addSubview(buttons)
         addSubview(addressField)
+        addSubview(searchBox)
 
+        activateConstraints(buttons: buttons)
+        updateTooltips()
+    }
+
+    private func activateConstraints(buttons: NSView) {
+        let searchWidth = searchBox.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.28)
+        searchWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             buttons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             buttons.centerYAnchor.constraint(equalTo: centerYAnchor),
             addressField.leadingAnchor.constraint(equalTo: buttons.trailingAnchor, constant: 8),
-            addressField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            addressField.trailingAnchor.constraint(equalTo: searchBox.leadingAnchor, constant: -8),
             addressField.centerYAnchor.constraint(equalTo: centerYAnchor),
             addressField.heightAnchor.constraint(equalToConstant: 32),
             breadcrumbBar.leadingAnchor.constraint(equalTo: addressField.leadingAnchor, constant: 4),
             breadcrumbBar.trailingAnchor.constraint(equalTo: addressField.trailingAnchor, constant: -4),
             breadcrumbBar.centerYAnchor.constraint(equalTo: addressField.centerYAnchor),
+
+            searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            searchBox.centerYAnchor.constraint(equalTo: centerYAnchor),
+            searchBox.heightAnchor.constraint(equalToConstant: 32),
+            searchWidth,
+            searchBox.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            searchBox.widthAnchor.constraint(lessThanOrEqualToConstant: 340),
+            searchField.leadingAnchor.constraint(equalTo: searchBox.leadingAnchor, constant: 6),
+            searchField.trailingAnchor.constraint(equalTo: searchBox.trailingAnchor, constant: -6),
+            searchField.centerYAnchor.constraint(equalTo: searchBox.centerYAnchor),
         ])
-        updateTooltips()
     }
 
     @available(*, unavailable)
@@ -93,7 +123,44 @@ final class AddressBarView: NSView {
     private func updateBorder() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             addressField.layer?.borderColor = Theme.dividerColor.cgColor
+            searchBox.layer?.borderColor = Theme.dividerColor.cgColor
         }
+    }
+
+    private func configureSearchField() {
+        searchField.isBordered = false
+        searchField.isBezeled = false
+        searchField.drawsBackground = false
+        searchField.focusRingType = .none
+        searchField.font = Theme.font(ofSize: 13)
+        searchField.sendsWholeSearchString = true
+        searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(searchFieldAction)
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchBox.addSubview(searchField)
+    }
+
+    /// Shows `query` (unless the user is typing) and "Search <place>".
+    func setSearch(query: String, placeholder: String, isEnabled: Bool) {
+        searchField.placeholderString = placeholder
+        searchField.isEnabled = isEnabled
+        searchBox.alphaValue = isEnabled ? 1 : 0.6
+        if searchField.currentEditor() == nil {
+            searchField.stringValue = query
+        }
+    }
+
+    /// Ctrl+F, Ctrl+E, F3.
+    func focusSearch() {
+        guard searchField.isEnabled else { return }
+        window?.makeFirstResponder(searchField)
+        searchField.currentEditor()?.selectAll(nil)
+    }
+
+    /// Sent on Return (handled by the delegate instead) and by the clear button.
+    @objc private func searchFieldAction() {
+        if searchField.stringValue.isEmpty { onSearchCancel?() }
     }
 
     /// Shows the scheme's shortcuts in the buttons' tooltips.
@@ -102,6 +169,8 @@ final class AddressBarView: NSView {
         forwardButton.toolTip = KeyboardShortcuts.toolTip("Forward", .forward)
         upButton.toolTip = KeyboardShortcuts.toolTip("Up to the parent folder", .up)
         refreshButton.toolTip = KeyboardShortcuts.toolTip("Refresh", .refresh)
+        searchField.toolTip = KeyboardShortcuts.toolTip("Search", .search)
+            + "\nFilters: kind:picture  date:\"last week\"  size:>10MB  ext:pdf"
     }
 
     /// Called after every navigation to refresh enabled state and the breadcrumb.
@@ -166,5 +235,53 @@ extension AddressBarView: NSMenuDelegate {
             item.representedObject = index + 1
             menu.addItem(item)
         }
+    }
+}
+
+extension AddressBarView: NSSearchFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        onSearchChange?(searchField.stringValue)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)):
+            onSearchSubmit?(searchField.stringValue)
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            searchField.stringValue = ""
+            onSearchCancel?()
+            onSearchMoveDown?()
+            return true
+        case #selector(NSResponder.moveDown(_:)):
+            onSearchMoveDown?()
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// The address bar's search box, drawn without a bezel inside a Windows-style rounded box.
+private final class SearchField: NSSearchField {
+    override static var cellClass: AnyClass? {
+        get { SearchFieldCell.self }
+        set { _ = newValue }
+    }
+}
+
+/// Without a bezel, `NSSearchFieldCell` edits across its whole width, so typed text runs under
+/// the magnifying glass; keep editing within the text area, as drawing does.
+private final class SearchFieldCell: NSSearchFieldCell {
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: searchTextRect(forBounds: rect), in: controlView, editor: textObj,
+                   delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                         delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: searchTextRect(forBounds: rect), in: controlView, editor: textObj,
+                     delegate: delegate, start: selStart, length: selLength)
     }
 }

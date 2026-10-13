@@ -163,9 +163,41 @@ needs checking by eye.
 - Hidden items and the navigation pane are now app-wide settings, as on Windows.
 
 ## Phase 5 — Home, Quick Access & Search (~2 weeks)
-- Home page: Quick Access tiles (pinned + frequent folders), Favorites, Recent files (Spotlight + app history)
-- "Pin to Quick Access" / "Pin to Home"
-- Search box scoped to the current folder: Spotlight (`NSMetadataQuery`) with fallback walk for non-indexed volumes; `kind:`, `date:`, `size:` filters; search-results view
+- [x] Home page: Quick Access tiles (pinned + frequent folders), Favorites, Recent files (Spotlight + app history)
+- [x] "Pin to Quick Access" / "Pin to Home" (Windows 11's "Add to Favorites" for files)
+- [x] Search box scoped to the current folder: Spotlight (`NSMetadataQuery`) with fallback walk for non-indexed volumes; `kind:`, `date:`, `size:` filters; search-results view
+- [ ] Reorder pins by dragging in the navigation pane (`QuickAccessStore.movePin` exists; no UI yet)
+
+**Status: implemented, not yet checked by hand.** Driven by a temporary in-app self-test (Home, Ctrl+F and typing,
+refining, Escape, pattern search, pinning, Home context menus, new tab); Home and search results checked in
+light/dark snapshots.
+- Home is the default for new windows and tabs (Settings › "Open Explorer to": Home / This PC / your home folder),
+  and Go › Home. It's a fixed layout in the collection view: Quick access as tiles (folder, parent, "Pinned"), then
+  Favorites and Recent as rows (Name | date used | folder). Groups collapse; view, sort and group commands are off.
+- Quick access (`QuickAccessStore`, ExplorerCore): pins start as Desktop … Videos and are the navigation pane's
+  folders, as on Windows 11 (pin / unpin from item and navigation pane context menus). Frequent folders: two or
+  more visits, ranked by count weighted by how recent the last visit was (up to 10); "Remove from Quick access"
+  hides one for good. Entries are keyed by path, so a trailing slash doesn't make a different folder.
+- Recent: files with a Spotlight "last used" date in the past 30 days in the home folder (not ~/Library, hidden
+  folders, or package contents, nor folders and apps), merged with files opened from the app; 20 shown, favorites
+  excluded. "Remove from Recent" hides a file until it's used again. Spotlight gets 3 s before Home shows without it.
+- Search box (Ctrl+F / Ctrl+E / F3, ⌘F) on the right of the address bar: "Search <place>"; searches 0.4 s after
+  typing stops, or on Return; refining replaces the search in the history; Escape or clearing goes back; ↓ moves
+  to the results. Scope: the folder; the home folder from Home; every local volume from This PC; off in the Recycle
+  Bin and Network.
+- Query syntax (`SearchQuery`): words must all appear (case- and accent-insensitive), "quoted phrases", `*`/`?`
+  patterns over the whole name, `kind:` (folder, document, picture, music, video, compressed, app — and synonyms),
+  `date:`/`datemodified:` (today … last year, `2024-05-01`, `>`/`>=`/`<`/`<=`, `a..b`), `size:` (Windows' empty …
+  gigantic, `>10MB`, `1.5GB`, `a..b`; 1 KB = 1024 bytes), `ext:`. Unknown `key:value` words are searched as text.
+  `kind:document` no longer counts source code as a document (the Filter menu too).
+- Engine (`FileSearch`): Spotlight on local internal volumes (name, or a word in the contents; live updates), with
+  ~/Library and hidden folders left out unless searching inside them; a breadth-first name walk elsewhere
+  (external, disk-image and network volumes), not entering packages. Results are capped at 10,000.
+- Results view: Details with Name, Date modified, Type, Size and **Folder** (sortable and groupable, search-only),
+  remembered once for all searches; Content view shows the folder under the name. "Searching…" in the status bar.
+  Context menu adds "Open file location"; cut/copy/delete/rename/share work, and moved or deleted items drop out.
+- Fixed on the way: the collection view kept stale data while Details was showing, so switching to a layout with
+  more sections (Home) threw inside AppKit; it's now reloaded before its layout changes.
 
 ## Phase 6 — Advanced features (~3–4 weeks)
 - **Properties dialog**: General (size, size on disk, contains, attributes), Security (POSIX/ACL in Windows-like form), Details

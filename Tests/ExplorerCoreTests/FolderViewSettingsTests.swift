@@ -74,11 +74,14 @@ import Testing
             grouping: FileGrouping(key: .originalLocation),
             columns: [.size, .originalLocation, .name, .size]
         )
-        let folder = settings.sanitized(inRecycleBin: false)
+        let folder = settings.sanitized(for: .folder)
         #expect(folder.columns == [.name, .size])
         #expect(folder.sort == FileItemSort())
         #expect(folder.grouping == nil)
-        #expect(settings.sanitized(inRecycleBin: true).columns == [.name, .size, .originalLocation])
+        #expect(settings.sanitized(for: .recycleBin).columns == [.name, .size, .originalLocation])
+        #expect(FolderViewSettings(columns: [.name, .folder]).sanitized(for: .folder).columns == [.name])
+        let search = FolderViewSettings(columns: [.name, .folder]).sanitized(for: .searchResults)
+        #expect(search.columns == [.name, .folder])
     }
 
     @Test func propertiesNeededOnlyForPropertyColumnsOrSort() {

@@ -155,6 +155,9 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.add("Edit Address", #selector(ExplorerTabController.editAddress(_:)), command: .focusAddressBar,
                  alternates: true)
+        menu.add("Search", #selector(ExplorerTabController.focusSearch(_:)), command: .search, alternates: true)
+        menu.addItem(.separator())
+        menu.add("Home", #selector(ExplorerTabController.goHome(_:)), modifiers: [])
         return menu
     }
 

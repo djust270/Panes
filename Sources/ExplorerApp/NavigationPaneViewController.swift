@@ -1,8 +1,9 @@
 import AppKit
 import ExplorerCore
 
-/// Navigation pane: Home, the well-known folders, This PC (lazily expanded to mounted
-/// volumes), Network and the Recycle Bin. Folders and the Recycle Bin accept drops.
+/// Navigation pane: Home, the Quick access pins (by default the well-known folders), This PC
+/// (lazily expanded to mounted volumes), Network and the Recycle Bin. Folders and the Recycle
+/// Bin accept drops. Pins follow Quick access changes made anywhere in the app.
 @MainActor
 final class NavigationPaneViewController: NSViewController {
     var onSelect: ((ExplorerLocation) -> Void)?
@@ -13,6 +14,10 @@ final class NavigationPaneViewController: NSViewController {
     private let outlineView = NavigationOutlineView()
     private let scrollView = NSScrollView()
     private var childrenCache: [String: [SidebarItem]] = [:]
+    private var roots = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)
+    private var quickAccessObserver: NSObjectProtocol?
+    /// The location last passed to `select(_:)`, to re-select after the pins change.
+    private var selectedLocation: ExplorerLocation?
     /// Set while `select(_:)` is driving the selection programmatically, so
     /// `outlineViewSelectionDidChange` doesn't re-navigate to where we already are.
     private var isProgrammaticSelection = false
@@ -55,9 +60,25 @@ final class NavigationPaneViewController: NSViewController {
         view = container
 
         outlineView.reloadData()
-        for root in SidebarTree.roots() where root.isExpandable {
+        for root in roots where root.isExpandable {
             outlineView.expandItem(root)
         }
+        quickAccessObserver = QuickAccess.observe { [weak self] in self?.reloadPins() }
+    }
+
+    /// Stops following Quick access. Called when the tab closes.
+    func close() {
+        quickAccessObserver.map(NotificationCenter.default.removeObserver)
+        quickAccessObserver = nil
+    }
+
+    /// Rebuilds the roots if Quick access's pins changed.
+    private func reloadPins() {
+        let updated = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)
+        guard updated != roots else { return }
+        roots = updated
+        outlineView.reloadData()
+        if let selectedLocation { select(selectedLocation) }
     }
 
     /// Highlights the sidebar row for `location`, expanding This PC if needed. Deselects if
@@ -65,10 +86,10 @@ final class NavigationPaneViewController: NSViewController {
     /// in Phase 1 — that's a known limitation, not a bug).
     func select(_ location: ExplorerLocation) {
         guard isViewLoaded else { return }
+        selectedLocation = location
         isProgrammaticSelection = true
         defer { isProgrammaticSelection = false }
 
-        let roots = SidebarTree.roots()
         if let root = roots.first(where: { $0.location == location }) {
             selectRow(for: root)
             return
@@ -105,13 +126,13 @@ final class NavigationPaneViewController: NSViewController {
 
 extension NavigationPaneViewController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        guard let item else { return SidebarTree.roots().count }
+        guard let item else { return roots.count }
         guard let sidebarItem = item as? SidebarItem else { return 0 }
         return children(of: sidebarItem).count
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        guard let item else { return SidebarTree.roots()[index] }
+        guard let item else { return roots[index] }
         let sidebarItem = item as! SidebarItem // swiftlint:disable:this force_cast
         return children(of: sidebarItem)[index]
     }
@@ -126,7 +147,7 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, itemForPersistentObject object: Any) -> Any? {
         guard let id = object as? String else { return nil }
-        return SidebarTree.roots().first { $0.id == id }
+        return roots.first { $0.id == id }
     }
 
     func outlineView(
@@ -234,7 +255,8 @@ extension NavigationPaneViewController: NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let location = location(atRow: outlineView.clickedRow) else { return }
+        let clickedRow = outlineView.clickedRow
+        guard let location = location(atRow: clickedRow) else { return }
         let newTab = menu.addItem(withTitle: "Open in new tab", action: #selector(openInNewTab(_:)), keyEquivalent: "")
         newTab.target = self
         newTab.representedObject = location
@@ -242,6 +264,30 @@ extension NavigationPaneViewController: NSMenuDelegate {
                                      keyEquivalent: "")
         newWindow.target = self
         newWindow.representedObject = location
+
+        guard let folder = location.fileURL else { return }
+        menu.addItem(.separator())
+        let isPinned = (outlineView.item(atRow: clickedRow) as? SidebarItem)?.isPinnedFolder == true
+            || QuickAccess.store.isPinned(folder)
+        let pin = menu.addItem(
+            withTitle: isPinned ? "Unpin from Quick access" : "Pin to Quick access",
+            action: #selector(togglePin(_:)),
+            keyEquivalent: ""
+        )
+        pin.target = self
+        pin.representedObject = folder
+        pin.tag = isPinned ? 1 : 0
+    }
+
+    @objc private func togglePin(_ sender: NSMenuItem) {
+        guard let folder = sender.representedObject as? URL else { return }
+        QuickAccess.change { store in
+            if sender.tag == 1 {
+                store.unpin(folder)
+            } else {
+                store.pin(folder)
+            }
+        }
     }
 
     fileprivate func location(atRow row: Int) -> ExplorerLocation? {

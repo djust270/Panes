@@ -88,6 +88,11 @@ extension FileItem {
 
     static let resourceKeySet = Set(resourceKeys)
 
+    /// Reads one item's attributes from disk (search results, Home); `nil` if it's gone.
+    public static func load(_ url: URL) -> FileItem? {
+        try? FileItem(prefetchedURL: url.standardizedFileURL)
+    }
+
     /// Builds an item from a URL whose resource values were prefetched with `resourceKeys`.
     init(prefetchedURL url: URL) throws {
         let values = try url.resourceValues(forKeys: Self.resourceKeySet)

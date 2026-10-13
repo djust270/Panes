@@ -36,6 +36,12 @@ public struct NavigationHistory: Sendable, Equatable {
         current = location
     }
 
+    /// Swaps the current entry for `location` without adding to the history, e.g. as a
+    /// search is refined while typing.
+    public mutating func replaceCurrent(with location: ExplorerLocation) {
+        current = location
+    }
+
     /// Goes back `steps` entries (1 = the Back button; >1 = picking from the dropdown).
     @discardableResult
     public mutating func goBack(steps: Int = 1) -> ExplorerLocation? {

@@ -42,14 +42,17 @@ final class FileCollectionView: NSCollectionView {
 }
 
 /// Flow layout for one view mode. Content view items span the full width (sized by the
-/// delegate); List view runs in columns and scrolls sideways, unless grouped.
+/// delegate); List view runs in columns and scrolls sideways, unless grouped. Home mixes
+/// tiles and full-width rows, sized by the delegate.
 final class FileCollectionLayout: NSCollectionViewFlowLayout {
     let viewMode: ViewMode
     let isGrouped: Bool
+    let isHome: Bool
 
-    init(viewMode: ViewMode, isGrouped: Bool) {
+    init(viewMode: ViewMode, isGrouped: Bool, isHome: Bool = false) {
         self.viewMode = viewMode
         self.isGrouped = isGrouped
+        self.isHome = isHome
         super.init()
         itemSize = Self.itemSize(for: viewMode)
         switch viewMode {
@@ -96,7 +99,7 @@ final class FileCollectionLayout: NSCollectionViewFlowLayout {
     }
 
     override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
-        if viewMode == .content, let collectionView, newBounds.width != collectionView.bounds.width {
+        if viewMode == .content || isHome, let collectionView, newBounds.width != collectionView.bounds.width {
             return true
         }
         return super.shouldInvalidateLayout(forBoundsChange: newBounds)

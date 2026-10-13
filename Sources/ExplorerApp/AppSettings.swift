@@ -18,6 +18,27 @@ enum AppSettings {
         }
     }
 
+    /// Windows' "Open File Explorer to": where new windows and tabs start.
+    enum StartLocation: String, CaseIterable {
+        case home, thisPC, homeFolder
+
+        var title: String {
+            switch self {
+            case .home: return "Home"
+            case .thisPC: return "This PC"
+            case .homeFolder: return "Your home folder"
+            }
+        }
+
+        var location: ExplorerLocation {
+            switch self {
+            case .home: return .home
+            case .thisPC: return .thisPC
+            case .homeFolder: return .folder(FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL)
+            }
+        }
+    }
+
     private enum Key {
         static let keyboardScheme = "KeyboardScheme"
         static let appearance = "Appearance"
@@ -25,6 +46,7 @@ enum AppSettings {
         static let captionButtons = "WindowsCaptionButtons"
         static let hiddenFiles = "ShowHiddenFiles"
         static let compactView = "CompactView"
+        static let startLocation = "StartLocation"
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -61,6 +83,11 @@ enum AppSettings {
     static var compactView: Bool {
         get { defaults.bool(forKey: Key.compactView) }
         set { set(newValue, for: Key.compactView) }
+    }
+
+    static var startLocation: StartLocation {
+        get { defaults.string(forKey: Key.startLocation).flatMap(StartLocation.init) ?? .home }
+        set { set(newValue.rawValue, for: Key.startLocation) }
     }
 
     private static func set(_ value: Any, for key: String) {

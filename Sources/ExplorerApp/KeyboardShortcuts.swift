@@ -23,6 +23,7 @@ enum KeyboardShortcuts {
         func character(_ code: Int) -> String { String(Character(UnicodeScalar(UInt16(code))!)) }
         return [
             .f2: character(NSF2FunctionKey),
+            .f3: character(NSF3FunctionKey),
             .f4: character(NSF4FunctionKey),
             .f5: character(NSF5FunctionKey),
             .leftArrow: character(NSLeftArrowFunctionKey),

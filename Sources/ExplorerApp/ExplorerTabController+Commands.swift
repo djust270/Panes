@@ -201,8 +201,9 @@ extension ExplorerTabController {
             return selection.contains(where: \.isFolder) && history.current != .recycleBin
         case #selector(openWith(_:)), #selector(openWithOtherApp(_:)):
             return selection.contains { !$0.isFolder } && history.current != .recycleBin
-        case #selector(sendTo(_:)), #selector(sendToMail(_:)), #selector(shareSelection(_:)),
-             #selector(compressSelection(_:)):
+        case #selector(sendTo(_:)), #selector(sendToMail(_:)), #selector(shareSelection(_:)):
+            return !selection.isEmpty && (inFolder || inSearchResults || history.current == .home)
+        case #selector(compressSelection(_:)):
             return !selection.isEmpty && inFolder
         case #selector(copyAsPath(_:)):
             return !selection.isEmpty || inFolder

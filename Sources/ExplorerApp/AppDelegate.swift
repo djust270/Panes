@@ -12,9 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.delegate as! AppDelegate // swiftlint:disable:this force_cast
     }
 
-    /// Where new windows and tabs open. (Windows opens Home, which arrives in Phase 5.)
+    /// Where new windows and tabs open: Home unless changed in Settings.
     static var newTabLocation: ExplorerLocation {
-        .folder(FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL)
+        AppSettings.startLocation.location
     }
 
     static func main() {

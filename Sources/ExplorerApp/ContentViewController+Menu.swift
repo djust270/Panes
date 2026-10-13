@@ -55,8 +55,13 @@ extension ContentViewController: NSMenuDelegate {
         let hasFolders = selection.contains(where: \.isFolder)
 
         switch (mode, onItem) {
-        case (.folder, true):
+        case (.folder, true), (.search, true), (.home, true):
             addFolderItemCommands(to: menu, hasFolders: hasFolders, files: selection.filter { !$0.isFolder })
+        case (.search, false):
+            addViewItems(to: menu)
+            menu.items.last.map(menu.removeItem)
+        case (.home, false):
+            menu.add("Refresh", #selector(ExplorerTabController.refresh(_:)), command: .refresh)
         case (.folder, false):
             addViewItems(to: menu)
             menu.add("Paste", #selector(NSText.paste(_:)), command: .paste)
@@ -87,7 +92,8 @@ extension ContentViewController: NSMenuDelegate {
     }
 
     /// Windows 11's item menu: the icon row, Open (in a new tab or window, or with an app),
-    /// Compress, Copy as path, and "Show more options".
+    /// Open file location (search results, Home), Quick access and Favorites, Compress, Copy as
+    /// path, and "Show more options".
     private func addFolderItemCommands(to menu: NSMenu, hasFolders: Bool, files: [FileItem]) {
         menu.addItem(ContextMenuIconRow.item(buttons: [
             .init(symbol: "scissors", title: "Cut", action: #selector(NSText.cut(_:))),
@@ -107,11 +113,67 @@ extension ContentViewController: NSMenuDelegate {
         if !files.isEmpty {
             menu.addItem(openWithItem(for: files.map(\.url)))
         }
+        if mode == .search || mode == .home {
+            menu.add("Open file location", #selector(ExplorerTabController.openFileLocation(_:)), modifiers: [])
+        }
         menu.addItem(.separator())
-        menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        addQuickAccessItems(to: menu)
+        if mode == .folder {
+            menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        }
         menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
         menu.addItem(.separator())
         menu.addItem(moreOptionsItem())
+    }
+
+    /// Where to anchor a popover for the selection (e.g. the share sheet), in `activeView`.
+    func anchorRectForSelection() -> NSRect {
+        guard let url = selectedURLs.first else { return NSRect(origin: .zero, size: NSSize(width: 1, height: 1)) }
+        if isDetailsMode, let row = listContent.row(of: url) {
+            let rect = tableView.rect(ofRow: row)
+            return NSRect(x: rect.minX + 20, y: rect.minY, width: min(rect.width, 200), height: rect.height)
+        }
+        if let position = listContent.position(of: url),
+           let item = collectionView.item(at: IndexPath(item: position.index, section: position.section)) {
+            return item.view.frame
+        }
+        return collectionView.visibleRect.insetBy(dx: collectionView.visibleRect.width / 2 - 1, dy: 0)
+    }
+
+    /// Pin to / Unpin from Quick access (folders), Add to / Remove from Favorites (files), and
+    /// on Home, Remove from Quick access (frequent folders) and Remove from Recent. Items that
+    /// don't apply to the selection are left out rather than disabled.
+    private func addQuickAccessItems(to menu: NSMenu) {
+        let selection = selectedItems
+        let store = QuickAccess.store
+        let folders = selection.filter(\.isFolder)
+        let files = selection.filter { !$0.isFolder }
+        let before = menu.numberOfItems
+        if !folders.isEmpty, folders.count == selection.count {
+            if folders.allSatisfy({ store.isPinned($0.url) }) {
+                menu.add("Unpin from Quick access", #selector(ExplorerTabController.unpinFromQuickAccess(_:)),
+                         modifiers: [])
+            } else {
+                menu.add("Pin to Quick access", #selector(ExplorerTabController.pinToQuickAccess(_:)), modifiers: [])
+            }
+        }
+        if !files.isEmpty, files.count == selection.count {
+            if files.allSatisfy({ store.isFavorite($0.url) }) {
+                menu.add("Remove from Favorites", #selector(ExplorerTabController.removeFromFavorites(_:)),
+                         modifiers: [])
+            } else {
+                menu.add("Add to Favorites", #selector(ExplorerTabController.addToFavorites(_:)), modifiers: [])
+            }
+        }
+        let sections = Set(selection.compactMap(homeSection(of:)))
+        if sections == [.quickAccess], !folders.contains(where: { store.isPinned($0.url) }) {
+            menu.add("Remove from Quick access", #selector(ExplorerTabController.removeFromFrequent(_:)),
+                     modifiers: [])
+        }
+        if sections == [.recent] {
+            menu.add("Remove from Recent", #selector(ExplorerTabController.removeFromRecent(_:)), modifiers: [])
+        }
+        if menu.numberOfItems > before { menu.addItem(.separator()) }
     }
 
     /// Windows' background menu starts with View ▸, Sort by ▸, Group by ▸ and Refresh.
@@ -208,11 +270,11 @@ extension ContentViewController: NSMenuDelegate {
         menu.add("Size All Columns to Fit", #selector(sizeAllColumnsToFit(_:))).target = self
         menu.addItem(.separator())
 
-        for column in FileColumn.available(inRecycleBin: mode == .recycleBin) {
+        for column in FileColumn.available(in: listKind) {
             let item = menu.add(column.title, #selector(toggleColumn(_:)), modifiers: [])
             item.target = self
             item.representedObject = column.rawValue
-            item.state = settings.columns.contains(column) ? .on : .off
+            item.state = settings.columns.contains(column) ? NSControl.StateValue.on : .off
             item.isEnabled = column != .name
         }
         menu.addItem(.separator())

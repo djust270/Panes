@@ -144,7 +144,7 @@ extension ExplorerTabController {
         case #selector(filterByKind(_:)):
             let kind = (menuItem.representedObject as? String).flatMap(FileKind.init(rawValue:))
             menuItem.state = kind.map(content.kindFilter.contains) == true ? .on : .off
-            return kind == nil ? !content.kindFilter.isEmpty : currentFolder != nil
+            return kind == nil ? !content.kindFilter.isEmpty : currentFolder != nil || inSearchResults
         case #selector(toggleItemCheckboxes(_:)):
             menuItem.state = content.showsCheckboxes ? .on : .off
             return true
@@ -162,8 +162,10 @@ extension ExplorerTabController {
     /// Layout, Sort by and Group by items, with checkmarks for the current choices.
     private func validateLayoutMenuItem(_ menuItem: NSMenuItem) -> Bool? {
         let settings = content.settings
-        let inRecycleBin = history.current == .recycleBin
-        let hasItems = currentFolder != nil || inRecycleBin || history.current == .thisPC
+        let kind = history.current.listKind
+        func fits(_ onlyIn: FileListKind?) -> Bool { onlyIn == nil || onlyIn == kind }
+        // Home's layout is fixed; Network has nothing to show yet.
+        let hasItems = history.current != .home && history.current != .network
 
         switch menuItem.action {
         case #selector(chooseViewMode(_:)):
@@ -171,7 +173,7 @@ extension ExplorerTabController {
             return hasItems
         case #selector(sortBy(_:)):
             let key = (menuItem.representedObject as? String).flatMap(FileItemSortKey.init(rawValue:))
-            menuItem.isHidden = key?.isRecycleBinOnly == true && !inRecycleBin
+            menuItem.isHidden = !fits(key?.onlyIn)
             menuItem.state = key == settings.sort.key ? .on : .off
             return hasItems
         case #selector(setSortOrder(_:)):
@@ -179,7 +181,7 @@ extension ExplorerTabController {
             return hasItems
         case #selector(groupBy(_:)):
             let key = (menuItem.representedObject as? String).flatMap(FileGroupKey.init(rawValue:))
-            menuItem.isHidden = key?.isRecycleBinOnly == true && !inRecycleBin
+            menuItem.isHidden = !fits(key?.onlyIn)
             menuItem.state = key == settings.grouping?.key ? .on : .off
             return hasItems
         case #selector(setGroupOrder(_:)):

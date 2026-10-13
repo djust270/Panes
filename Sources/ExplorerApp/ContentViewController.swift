@@ -30,6 +30,10 @@ final class ContentViewController: NSViewController {
         case recycleBin
         /// This PC's volume list: no file operations.
         case volumes
+        /// Home: Quick access tiles, then Favorites and Recent as rows. A fixed layout.
+        case home
+        /// Search results: adds the Folder column.
+        case search
     }
 
     private static let checkboxesKey = "ShowItemCheckboxes"
@@ -46,6 +50,11 @@ final class ContentViewController: NSViewController {
 
     private(set) var mode: Mode = .folder
     private(set) var settings = FolderViewSettings()
+
+    /// Home's groups, as last supplied by `setHomeGroups`.
+    var homeGroups: [FileGroup] = []
+    /// When Home's Favorites and Recent files were last used, by path.
+    var homeDates: [String: Date] = [:]
 
     /// Items waiting in the clipboard after Cut, drawn dimmed.
     var cutURLs: Set<URL> = [] {
@@ -117,6 +126,10 @@ final class ContentViewController: NSViewController {
     var deferredItems: [FileItem]?
     /// Set while settings are pushed into the views, so view callbacks don't echo them back.
     var isApplyingSettings = false
+    /// `listContent` changed while the collection view was hidden (only the showing view is
+    /// reloaded). It must be reloaded before its layout changes, or AppKit asks the new layout
+    /// about index paths that no longer exist and throws.
+    private var collectionNeedsReload = false
 
     private var propertiesCache: [URL: (modified: Date?, properties: FileProperties)] = [:]
     private var propertiesTask: Task<Void, Never>?
@@ -168,6 +181,10 @@ final class ContentViewController: NSViewController {
         kindFilter = []
         typeAhead.reset()
         items = []
+        listContent = FileListContent()
+        collectionNeedsReload = true
+        homeGroups = []
+        homeDates = [:]
         propertiesTask?.cancel()
         propertiesCache = [:]
         applySettings(settings, notify: false)
@@ -175,6 +192,7 @@ final class ContentViewController: NSViewController {
 
     /// Changes the view in response to the user, and reports it through `onSettingsChange`.
     func updateSettings(_ change: (inout FolderViewSettings) -> Void) {
+        guard mode != .home else { return }
         finishRenaming(commit: true)
         var updated = settings
         change(&updated)
@@ -185,16 +203,22 @@ final class ContentViewController: NSViewController {
     private func applySettings(_ newSettings: FolderViewSettings, notify: Bool) {
         let selection = selectedURLs
         let hadFocus = view.window?.firstResponder === activeView
-        settings = newSettings.sanitized(inRecycleBin: mode == .recycleBin)
+        settings = newSettings.sanitized(for: listKind)
 
         isApplyingSettings = true
         applyTableSettings()
-        let isGrouped = settings.grouping != nil
+        let isGrouped = settings.grouping != nil || mode == .home
         let layout = collectionView.collectionViewLayout as? FileCollectionLayout
-        if layout?.viewMode != settings.viewMode || layout?.isGrouped != isGrouped {
+        let isHome = mode == .home
+        if layout?.viewMode != settings.viewMode || layout?.isGrouped != isGrouped || layout?.isHome != isHome {
+            if collectionNeedsReload {
+                collectionView.reloadData()
+                collectionNeedsReload = false
+            }
             collectionView.collectionViewLayout = FileCollectionLayout(
                 viewMode: settings.viewMode,
-                isGrouped: isGrouped
+                isGrouped: isGrouped,
+                isHome: isHome
             )
         }
         isApplyingSettings = false
@@ -270,17 +294,23 @@ final class ContentViewController: NSViewController {
 
     /// Rebuilds `listContent` from `items` and reloads the active view.
     func rebuild(selecting selection: Set<URL>, scroll: Bool) {
-        let shown = kindFilter.filter(settings.needsProperties ? itemsWithProperties() : items)
-        listContent = FileListContent(
-            items: shown,
-            sort: settings.sort,
-            grouping: settings.grouping,
-            collapsedGroups: collapsedGroups
-        )
+        if mode == .home {
+            listContent = FileListContent(groups: homeGroups, collapsedGroups: collapsedGroups)
+        } else {
+            let shown = kindFilter.filter(settings.needsProperties ? itemsWithProperties() : items)
+            listContent = FileListContent(
+                items: shown,
+                sort: settings.sort,
+                grouping: settings.grouping,
+                collapsedGroups: collapsedGroups
+            )
+        }
         if isDetailsMode {
             tableView.reloadData()
+            collectionNeedsReload = true
         } else {
             collectionView.reloadData()
+            collectionNeedsReload = false
         }
         setSelection(selection, scroll: scroll)
     }
@@ -346,33 +376,6 @@ final class ContentViewController: NSViewController {
         selectionDidChange()
     }
 
-    func selectAllItems() {
-        setSelection(Set(listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)), scroll: false)
-    }
-
-    func selectNone() {
-        setSelection([], scroll: false)
-    }
-
-    func invertSelection() {
-        let selected = selectedURLs
-        let visible = listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)
-        setSelection(Set(visible.filter { !selected.contains($0) }), scroll: false)
-    }
-
-    /// Toggles one item without touching the rest of the selection (item checkboxes).
-    func toggleSelection(of url: URL) {
-        var selection = selectedURLs
-        let key = url.standardizedFileURL
-        if selection.contains(key) {
-            selection.remove(key)
-        } else {
-            selection.insert(key)
-        }
-        setSelection(selection, scroll: false)
-        view.window?.makeFirstResponder(activeView)
-    }
-
     func selectionDidChange() {
         if showsCheckboxes, isDetailsMode { updateVisibleCheckboxes() }
         onSelectionChange?()
@@ -387,9 +390,12 @@ final class ContentViewController: NSViewController {
             onNavigate?(.folder(only.url))
             return
         }
-        for item in selected where !item.isFolder {
-            NSWorkspace.shared.open(item.url)
+        let files = selected.filter { !$0.isFolder }.map(\.url)
+        for file in files {
+            NSWorkspace.shared.open(file)
         }
+        // Apps and other packages aren't "recent files".
+        QuickAccess.recordOpen(of: selected.filter { $0.kind == .file }.map(\.url))
     }
 
     /// Type-ahead: selects the next item whose name starts with what's been typed. Returns
@@ -412,20 +418,6 @@ final class ContentViewController: NSViewController {
     func openInNewTab(_ item: FileItem) {
         guard item.isFolder, mode != .recycleBin else { return }
         onOpenInNewTab?(.folder(item.url))
-    }
-
-    /// Where to anchor a popover for the selection (e.g. the share sheet), in `activeView`.
-    func anchorRectForSelection() -> NSRect {
-        guard let url = selectedURLs.first else { return NSRect(origin: .zero, size: NSSize(width: 1, height: 1)) }
-        if isDetailsMode, let row = listContent.row(of: url) {
-            let rect = tableView.rect(ofRow: row)
-            return NSRect(x: rect.minX + 20, y: rect.minY, width: min(rect.width, 200), height: rect.height)
-        }
-        if let position = listContent.position(of: url),
-           let item = collectionView.item(at: IndexPath(item: position.index, section: position.section)) {
-            return item.view.frame
-        }
-        return collectionView.visibleRect.insetBy(dx: collectionView.visibleRect.width / 2 - 1, dy: 0)
     }
 
     /// Re-applies theme settings (row heights, colours, fonts) after they change.

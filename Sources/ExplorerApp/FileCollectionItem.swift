@@ -141,9 +141,9 @@ final class FileItemView: NSView {
         nameField.maximumNumberOfLines = isGrid ? 2 : 1
         nameField.lineBreakMode = isGrid ? .byWordWrapping : .byTruncatingMiddle
         nameField.cell?.wraps = isGrid
-        line2.isHidden = viewMode != .tiles && viewMode != .content
+        line2.isHidden = viewMode != .tiles && viewMode != .content && viewMode != .details
         line3.isHidden = viewMode != .tiles
-        right1.isHidden = viewMode != .content
+        right1.isHidden = viewMode != .content && viewMode != .details
         right2.isHidden = viewMode != .content
         needsLayout = true
         needsDisplay = true
@@ -169,9 +169,18 @@ final class FileItemView: NSView {
             iconView.frame = NSRect(x: (width - icon) / 2, y: 6, width: icon, height: icon)
             let top = 6 + icon + 4
             nameField.frame = NSRect(x: 4, y: top, width: width - 8, height: max(0, height - top - 2))
-        case .smallIcons, .list, .details:
+        case .smallIcons, .list:
             iconView.frame = NSRect(x: 4 + inset, y: (height - 16) / 2, width: 16, height: 16)
             nameField.frame = NSRect(x: 24 + inset, y: (height - 16) / 2, width: width - 28 - inset, height: 16)
+        case .details:
+            // Home's rows: Name | date | folder, like Windows' Recent list.
+            let x = 30 + inset
+            iconView.frame = NSRect(x: 8 + inset, y: (height - 16) / 2, width: 16, height: 16)
+            let nameWidth = max(140, (width - x) * 0.45)
+            nameField.frame = NSRect(x: x, y: (height - 16) / 2, width: nameWidth - 12, height: 16)
+            right1.frame = NSRect(x: x + nameWidth, y: (height - 15) / 2, width: 140, height: 15)
+            let folderX = x + nameWidth + 150
+            line2.frame = NSRect(x: folderX, y: (height - 15) / 2, width: max(0, width - folderX - 8), height: 15)
         case .tiles:
             iconView.frame = NSRect(x: 6 + inset, y: (height - icon) / 2, width: icon, height: icon)
             let x = 60 + inset

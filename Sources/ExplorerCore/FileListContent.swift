@@ -35,16 +35,25 @@ public struct FileListContent: Sendable {
     ) {
         let sorted = sort.sorted(items)
         if let grouping {
-            let groups = grouper.groups(sorted, by: grouping)
-            sections = groups.map { group in
-                let collapsed = collapsedGroups.contains(group.id)
-                return Section(group: group, isCollapsed: collapsed, items: collapsed ? [] : group.items)
-            }
-            allItems = groups.flatMap(\.items)
+            self.init(groups: grouper.groups(sorted, by: grouping), collapsedGroups: collapsedGroups)
         } else {
-            sections = [Section(group: nil, isCollapsed: false, items: sorted)]
-            allItems = sorted
+            self.init(sections: [Section(group: nil, isCollapsed: false, items: sorted)], allItems: sorted)
         }
+    }
+
+    /// Fixed groups, shown in the order given with their items as they are (e.g. Home's
+    /// Quick access, Favorites and Recent).
+    public init(groups: [FileGroup], collapsedGroups: Set<String> = []) {
+        let sections = groups.map { group in
+            let collapsed = collapsedGroups.contains(group.id)
+            return Section(group: group, isCollapsed: collapsed, items: collapsed ? [] : group.items)
+        }
+        self.init(sections: sections, allItems: groups.flatMap(\.items))
+    }
+
+    private init(sections: [Section], allItems: [FileItem]) {
+        self.sections = sections
+        self.allItems = allItems
 
         var rows: [Row] = []
         var rowByURL: [URL: Int] = [:]
