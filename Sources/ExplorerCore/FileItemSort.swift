@@ -16,6 +16,10 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
     case dateDeleted
     /// Search results only.
     case folder
+    /// This PC only.
+    case totalSize
+    /// This PC only.
+    case freeSpace
 
     public var title: String {
         switch self {
@@ -30,6 +34,8 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
         case .originalLocation: return "Original Location"
         case .dateDeleted: return "Date Deleted"
         case .folder: return "Folder"
+        case .totalSize: return "Total Size"
+        case .freeSpace: return "Free Space"
         }
     }
 
@@ -41,8 +47,15 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
         switch self {
         case .originalLocation, .dateDeleted: return .recycleBin
         case .folder: return .searchResults
+        case .totalSize, .freeSpace: return .drives
         default: return nil
         }
+    }
+
+    /// Whether a list of `kind` can be sorted by this key (This PC only by its own columns).
+    public func isAvailable(in kind: FileListKind) -> Bool {
+        if kind == .drives { return FileColumn.available(in: .drives).contains { $0.sortKey == self } }
+        return onlyIn == nil || onlyIn == kind
     }
 }
 
@@ -98,6 +111,10 @@ public struct FileItemSort: Sendable, Hashable, Codable {
             return order(lhs.trashInfo?.dateDeleted ?? .distantPast, rhs.trashInfo?.dateDeleted ?? .distantPast)
         case .folder:
             return nameOrder0(lhs.folderPath, rhs.folderPath)
+        case .totalSize:
+            return sizeOrder(lhs.volume?.totalCapacity, rhs.volume?.totalCapacity)
+        case .freeSpace:
+            return sizeOrder(lhs.volume?.availableCapacity, rhs.volume?.availableCapacity)
         }
     }
 

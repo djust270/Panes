@@ -56,6 +56,7 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .newFolder: return [.init("n", [.control, .shift])]
         case .newTextDocument: return []
         case .open: return []
+        case .properties: return [.init(.returnKey, .option)]
         case .copyAsPath: return [.init("c", [.control, .shift])]
         case .cut: return [.init("x", ctrl)]
         case .copy: return [.init("c", ctrl)]
@@ -96,6 +97,7 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .newFolder: return [.init("n", [.command, .shift])]
         case .newTextDocument: return [.init("n", [.command, .option])]
         case .open: return [.init("o", cmd), .init(.downArrow, cmd)]
+        case .properties: return [.init("i", cmd)]
         case .copyAsPath: return [.init("c", [.command, .option])]
         case .cut: return [.init("x", cmd)]
         case .copy: return [.init("c", cmd)]
@@ -128,7 +130,7 @@ public enum ExplorerCommand: Hashable, Sendable {
     case newWindow, newTab, closeTab, nextTab, previousTab
     /// Ctrl+1…9 under the Windows scheme; 9 selects the last tab.
     case selectTab(Int)
-    case newFolder, newTextDocument, open
+    case newFolder, newTextDocument, open, properties
     case cut, copy, paste, undo, redo, copyAsPath
     case rename, delete, deletePermanently
     case selectAll, selectNone, invertSelection
@@ -140,7 +142,7 @@ public enum ExplorerCommand: Hashable, Sendable {
     public static var allCases: [ExplorerCommand] {
         [
             .newWindow, .newTab, .closeTab, .nextTab, .previousTab,
-            .newFolder, .newTextDocument, .open, .cut, .copy, .paste, .undo, .redo, .copyAsPath,
+            .newFolder, .newTextDocument, .open, .properties, .cut, .copy, .paste, .undo, .redo, .copyAsPath,
             .rename, .delete, .deletePermanently, .selectAll, .selectNone, .invertSelection,
             .back, .forward, .up, .refresh, .focusAddressBar, .search,
             .previewPane, .detailsPane, .navigationPane, .hiddenFiles,
@@ -155,7 +157,7 @@ public struct KeyShortcut: Hashable, Sendable, CustomStringConvertible {
         case character(String)
         case f2, f3, f4, f5
         case leftArrow, rightArrow, upArrow, downArrow
-        case backspace, forwardDelete, tab
+        case backspace, forwardDelete, tab, returnKey
 
         public var isFunctionKey: Bool {
             switch self {
@@ -207,6 +209,7 @@ public struct KeyShortcut: Hashable, Sendable, CustomStringConvertible {
         case .backspace: text += "⌫"
         case .forwardDelete: text += "⌦"
         case .tab: text += "⇥"
+        case .returnKey: text += "↩"
         }
         return text
     }

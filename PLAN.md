@@ -200,13 +200,58 @@ light/dark snapshots.
   more sections (Home) threw inside AppKit; it's now reloaded before its layout changes.
 
 ## Phase 6 — Advanced features (~3–4 weeks)
-- **Properties dialog**: General (size, size on disk, contains, attributes), Security (POSIX/ACL in Windows-like form), Details
-- Compress to ZIP / Extract All wizard
-- Network: Bonjour/SMB browsing, "Map network drive" via `NetFS`, `\\server\share` paths in the address bar
-- This PC: drive tiles with capacity bars, Eject, optional "drive letter" labels
-- Open with ▸, Set default app, "Open in Terminal", Copy as path (Windows & POSIX)
-- Register as folder handler / Services provider ("Reveal in Explorer" from other apps)
-- Optional dual-pane mode
+- [x] **Properties dialog**: General (size, size on disk, contains, attributes), Security (POSIX/ACL in Windows-like form), Details
+- [x] Compress to ZIP / Extract All wizard
+- [x] Network: Bonjour/SMB browsing, "Map network drive" via `NetFS`, `\\server\share` paths in the address bar
+- [x] This PC: drive tiles with capacity bars, Eject, optional "drive letter" labels
+- [x] Open with ▸, Set default app, "Open in Terminal", Copy as path (Windows & POSIX)
+- [x] Register as folder handler / Services provider ("Reveal in Explorer" from other apps)
+- [x] Optional dual-pane mode
+
+**Status: implemented, not yet checked by hand.** Driven by a temporary in-app self-test (This PC, Properties for a
+file, a folder, several items and drives, Extract All, Network, Map network drive against a mounted SMB share,
+dual pane, launching with a folder and revealing a file in the bundled app), with snapshots in light and dark.
+Not exercised: the Services menu entries (need `pbs -update` on a bundled build), "Show in Finder" with Explorer
+as the default file viewer, Bonjour discovery (no server here advertises SMB), and Eject.
+- This PC: "Devices and drives" and "Network locations" groups (fixed, sorted by the view's sort). Tiles (the
+  default) show a capacity bar, red above 90% full, and "X free of Y"; Details has Name, Type (Local Disk,
+  Removable Disk, Network Drive), Total Size and Free Space. Free space counts purgeable space on APFS, as Finder
+  does. Updates live on mount, unmount and rename; a tab showing an ejected drive goes to This PC. Eject /
+  Disconnect from the item and navigation pane menus.
+- Drive letters (Settings, off by default): the startup disk is C:, other disks take the first free letter from
+  D:, network drives from Z: down; a volume gets its letter back when remounted (by volume UUID, or by share for
+  network volumes), and when all are taken the longest-gone volume's letter is reused (`DriveStore`).
+- Properties (Alt+Enter, ⌘I under the Mac scheme; File menu, context menus, ⋯, navigation pane): one dialog per
+  selection, OK / Cancel / Apply. General: editable name (a rename with undo), type, "Opens with … Change…" (sets
+  the default app for the type right away, as Windows does), location, size and size on disk (folders count as
+  you watch; packages count as one file), contains, created / modified / accessed, Read-only (= Locked) and
+  Hidden, tri-state for several items. Drives: type, file system, share, used / free with a ring chart.
+  Security: owner, group and Everyone from the POSIX bits plus access control entries, mapped onto Full control,
+  Modify, Read & execute, List folder contents, Read, Write and Special permissions with Allow/Deny; the owner
+  can change the POSIX rows (Windows-style cascading checkboxes), ACL rows are read-only. Details (files):
+  Spotlight metadata under Description, Origin, Image, Camera, GPS, Media, Audio, Content, then File.
+- Extract All… (context menu, File menu, ⋯) for .zip (`ditto`, keeps resource forks) and tar, gz/bz2/xz, 7z, RAR,
+  xar, cpio (`bsdtar`): the Windows wizard (destination, "Show extracted files when complete"), extracted into a
+  staging folder on the destination's volume and moved in by the operation engine, so clashes get Replace or
+  Skip. Cancellable; not undoable (nor is Compress).
+- Open with ▸ Choose another app… has "Always use this app to open .ext files". Open in Terminal on folders and
+  the background. Copy as Windows path (Show more options, Edit menu): `\\server\share\…` on SMB shares, `D:\…`
+  with drive letters.
+- Network: computers advertising SMB or AFP over Bonjour, plus the servers of mounted shares and mapped drives
+  (most NAS boxes and Windows PCs don't advertise). Opening one connects with the system's share picker.
+- Map network drive… (This PC, Network, navigation pane, ⋯, Go menu): drive letter, folder (`\\server\share` or a
+  URL, with known servers suggested), "Reconnect when Explorer starts" (silently, no sign-in prompt) and
+  "Connect using different credentials". Disconnect forgets the mapping.
+- Folder handler: the bundle declares folders and volumes as viewable (rank Alternate), so Explorer is in Finder's
+  Open With; opened folders get a tab in the frontmost window, opened files are revealed (folder opened, files
+  selected). Services: "Open in Explorer" (folders) and "Reveal in Explorer" (anything). Settings › "Open folders
+  and “Show in Finder” in Explorer" makes it the default for `public.folder` and the `NSFileViewer`, and handles
+  the reveal Apple event; off by default, only available from the bundle.
+- Dual pane (View menu, View ▾ › Show): a second, independent pane beside the selected tab (no navigation or side
+  pane, not in the tab strip), forgotten when turned off. Copy / Move to other pane (Edit menu, Show more
+  options), Go › Switch to Other Pane; drag and drop works between panes as anywhere else.
+- Fixed on the way: Properties tabs start at their real size (AppKit otherwise logged conflicting constraints);
+  non-APFS volumes aren't asked for purgeable space (CacheDelete errors in the log).
 
 ## Phase 7 — Polish & release (~2 weeks)
 - Performance profiling (100k+ item folders, network shares, slow external drives)

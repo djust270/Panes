@@ -18,13 +18,17 @@ final class ExplorerRootViewController: NSViewController {
 
     private static let navigationPaneKey = "NavigationPaneHidden"
 
+    /// The second pane in dual-pane mode: no navigation pane or side pane, and its toggles
+    /// don't change the app-wide choices.
+    var isCompanion = false
+
     override func loadView() {
         let navigationItem = NSSplitViewItem(viewController: navigationPane)
         navigationItem.minimumThickness = 180
         navigationItem.maximumThickness = 400
         navigationItem.canCollapse = true
         navigationItem.holdingPriority = .defaultLow + 20
-        navigationItem.isCollapsed = UserDefaults.standard.bool(forKey: Self.navigationPaneKey)
+        navigationItem.isCollapsed = isCompanion || UserDefaults.standard.bool(forKey: Self.navigationPaneKey)
         self.navigationItem = navigationItem
 
         let contentItem = NSSplitViewItem(viewController: content)
@@ -39,14 +43,16 @@ final class ExplorerRootViewController: NSViewController {
 
         splitViewController.splitView.isVertical = true
         splitViewController.splitView.dividerStyle = .thin
-        splitViewController.splitView.autosaveName = "ExplorerSplitView"
+        // The companion's pane widths aren't remembered: restoring the shared layout would
+        // bring its navigation pane back.
+        if !isCompanion { splitViewController.splitView.autosaveName = "ExplorerSplitView" }
         splitViewController.addSplitViewItem(navigationItem)
         splitViewController.addSplitViewItem(contentItem)
         splitViewController.addSplitViewItem(paneItem)
         addChild(splitViewController)
 
         view = makeLayout()
-        showSidePane(SidePaneViewController.savedPane, animated: false)
+        showSidePane(isCompanion ? .none : SidePaneViewController.savedPane, animated: false)
     }
 
     /// Header layer (address and command bars) over the body (panes and status bar).
@@ -100,7 +106,7 @@ final class ExplorerRootViewController: NSViewController {
 
     /// View › Show › Navigation pane; app-wide, as on Windows.
     func toggleNavigationPane() {
-        guard let navigationItem else { return }
+        guard let navigationItem, !isCompanion else { return }
         let collapse = !navigationItem.isCollapsed
         navigationItem.animator().isCollapsed = collapse
         UserDefaults.standard.set(collapse, forKey: Self.navigationPaneKey)
@@ -108,7 +114,7 @@ final class ExplorerRootViewController: NSViewController {
 
     /// Shows the Preview or Details pane, or hides it (`.none`).
     func showSidePane(_ pane: SidePaneViewController.Pane, animated: Bool = true) {
-        SidePaneViewController.savedPane = pane
+        if !isCompanion { SidePaneViewController.savedPane = pane }
         sidePane.show(pane)
         guard let sidePaneItem else { return }
         let collapse = pane == .none

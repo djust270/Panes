@@ -33,6 +33,7 @@ enum KeyboardShortcuts {
             .backspace: "\u{8}",
             .forwardDelete: character(NSDeleteFunctionKey),
             .tab: "\t",
+            .returnKey: "\r",
         ]
     }()
 

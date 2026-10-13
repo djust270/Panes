@@ -164,8 +164,8 @@ extension ExplorerTabController {
         let settings = content.settings
         let kind = history.current.listKind
         func fits(_ onlyIn: FileListKind?) -> Bool { onlyIn == nil || onlyIn == kind }
-        // Home's layout is fixed; Network has nothing to show yet.
-        let hasItems = history.current != .home && history.current != .network
+        // Home's layout is fixed.
+        let hasItems = history.current != .home
 
         switch menuItem.action {
         case #selector(chooseViewMode(_:)):
@@ -173,7 +173,7 @@ extension ExplorerTabController {
             return hasItems
         case #selector(sortBy(_:)):
             let key = (menuItem.representedObject as? String).flatMap(FileItemSortKey.init(rawValue:))
-            menuItem.isHidden = !fits(key?.onlyIn)
+            menuItem.isHidden = !(key?.isAvailable(in: kind) ?? true)
             menuItem.state = key == settings.sort.key ? .on : .off
             return hasItems
         case #selector(setSortOrder(_:)):
@@ -183,7 +183,8 @@ extension ExplorerTabController {
             let key = (menuItem.representedObject as? String).flatMap(FileGroupKey.init(rawValue:))
             menuItem.isHidden = !fits(key?.onlyIn)
             menuItem.state = key == settings.grouping?.key ? .on : .off
-            return hasItems
+            // This PC's groups are fixed; Network's computers have nothing to group by.
+            return hasItems && kind != .drives && history.current != .network
         case #selector(setGroupOrder(_:)):
             menuItem.state = settings.grouping?.ascending == (menuItem.tag == 1) ? .on : .off
             return hasItems && settings.grouping != nil

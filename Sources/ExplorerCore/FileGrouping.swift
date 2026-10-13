@@ -62,6 +62,12 @@ public struct FileGroup: Sendable, Hashable {
     public let id: String
     public let title: String
     public var items: [FileItem]
+
+    public init(id: String, title: String, items: [FileItem]) {
+        self.id = id
+        self.title = title
+        self.items = items
+    }
 }
 
 /// Assigns items to Windows Explorer's groups.

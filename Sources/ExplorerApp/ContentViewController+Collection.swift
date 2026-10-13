@@ -74,7 +74,7 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
         guard let item = listContent.item(section: indexPath.section, index: indexPath.item) else { return }
         let viewMode = cellMode(forSection: indexPath.section)
         var image = icon(for: item)
-        if viewMode.showsThumbnails, mode != .home {
+        if viewMode.showsThumbnails, mode != .home, listsFiles {
             let url = item.url.standardizedFileURL
             let scale = view.window?.backingScaleFactor ?? 2
             let thumbnail = ThumbnailProvider.shared.thumbnail(
@@ -117,6 +117,14 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
     private func detailText(for item: FileItem, mode viewMode: ViewMode) -> ItemDetailText {
         let size = item.size.map { FileSizeFormat.string(for: $0) } ?? ""
         let folder = Self.displayPath(item.folderPath)
+        if let volume = item.volume {
+            return driveDetailText(volume, mode: viewMode)
+        }
+        if mode == .network {
+            let address = item.url.absoluteString
+            return viewMode == .content ? ItemDetailText(line2: address, right1: "Computer")
+                : ItemDetailText(line2: "Computer", line3: address)
+        }
         if mode == .home {
             if viewMode == .tiles {
                 return ItemDetailText(line2: folder, line3: QuickAccess.store.isPinned(item.url) ? "Pinned" : "")
@@ -134,6 +142,21 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
                 right1: modified,
                 right2: size.isEmpty ? "" : "Size: \(size)"
             )
+        default:
+            return ItemDetailText()
+        }
+    }
+
+    /// This PC: the capacity bar and "X free of Y" on tiles; type, free space and size in Content.
+    private func driveDetailText(_ volume: MountedVolume, mode viewMode: ViewMode) -> ItemDetailText {
+        switch viewMode {
+        case .tiles:
+            return ItemDetailText(line3: volume.capacityText, capacity: volume.usedFraction,
+                                  capacityIsLow: volume.isNearlyFull)
+        case .content:
+            let free = volume.availableCapacity.map { "Free space: " + FileSizeFormat.string(for: $0) } ?? ""
+            let total = volume.totalCapacity.map { "Total size: " + FileSizeFormat.string(for: $0) } ?? ""
+            return ItemDetailText(line2: volume.typeDescription, right1: free, right2: total)
         default:
             return ItemDetailText()
         }

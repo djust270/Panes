@@ -13,13 +13,23 @@ enum NetworkShareMounter {
         case failed(String)
     }
 
+    /// How to sign in.
+    enum SignIn {
+        /// Keychain or guest, asking only if needed.
+        case automatic
+        /// Always ask ("Connect using different credentials").
+        case ask
+        /// Never ask (reconnecting mapped drives at launch).
+        case silent
+    }
+
     /// Mounts `path`'s share (or reuses an existing mount) and returns the folder to open.
-    static func mount(_ path: NetworkPath) async -> Outcome {
-        if let existing = path.existingMountPoint() {
+    static func mount(_ path: NetworkPath, signIn: SignIn = .automatic) async -> Outcome {
+        if signIn != .ask, let existing = path.existingMountPoint() {
             return .mounted(path.folder(at: existing))
         }
 
-        let (status, mountPoints) = await mountShare(path.shareURL)
+        let (status, mountPoints) = await mountShare(path.shareURL, signIn: signIn)
         switch status {
         case 0:
             guard let first = mountPoints.first else { return .failed("The server didn’t report a mount point.") }
@@ -35,15 +45,21 @@ enum NetworkShareMounter {
         }
     }
 
-    private static func mountShare(_ url: URL) async -> (Int32, [String]) {
-        await withCheckedContinuation { continuation in
+    private static func mountShare(_ url: URL, signIn: SignIn) async -> (Int32, [String]) {
+        let openOptions = NSMutableDictionary()
+        switch signIn {
+        case .automatic: break // sign-in UI when needed
+        case .ask: openOptions[kNAUIOptionKey] = kNAUIOptionForceUI
+        case .silent: openOptions[kNAUIOptionKey] = kNAUIOptionNoUI
+        }
+        return await withCheckedContinuation { continuation in
             var requestID: AsyncRequestID?
             let status = NetFSMountURLAsync(
                 url as CFURL,
                 nil, // mount under /Volumes
                 nil,
                 nil,
-                nil, // default open options: sign-in UI allowed
+                openOptions as CFMutableDictionary,
                 nil,
                 &requestID,
                 DispatchQueue.main

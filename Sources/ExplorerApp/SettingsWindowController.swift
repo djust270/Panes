@@ -31,6 +31,9 @@ private struct SettingsView: View {
     @State private var compactView = AppSettings.compactView
     @State private var hiddenFiles = AppSettings.showsHiddenFiles
     @State private var startLocation = AppSettings.startLocation
+    @State private var driveLetters = AppSettings.showsDriveLetters
+    @State private var defaultBrowser = SystemIntegration.isDefaultFileBrowser
+    @State private var defaultBrowserError: String?
 
     var body: some View {
         Form {
@@ -61,6 +64,27 @@ private struct SettingsView: View {
                        isOn: bind($captionButtons) { AppSettings.windowsCaptionButtons = $0 })
                 Toggle("Compact view", isOn: bind($compactView) { AppSettings.compactView = $0 })
                 Toggle("Show hidden items", isOn: bind($hiddenFiles) { AppSettings.showsHiddenFiles = $0 })
+                Toggle("Show drive letters (C:, D:…)",
+                       isOn: bind($driveLetters) { AppSettings.showsDriveLetters = $0 })
+            }
+            Section {
+                Toggle("Open folders and “Show in Finder” in Explorer", isOn: Binding(
+                    get: { defaultBrowser },
+                    set: { value in
+                        defaultBrowser = value
+                        Task { @MainActor in
+                            defaultBrowserError = await SystemIntegration.setDefaultFileBrowser(value)
+                            defaultBrowser = SystemIntegration.isDefaultFileBrowser
+                        }
+                    }
+                ))
+                .disabled(!SystemIntegration.canBeDefault)
+                Text(defaultBrowserError ?? (SystemIntegration.canBeDefault
+                    ? "Makes Explorer the default file browser for every app. Finder still shows the Desktop."
+                    : "Available when Explorer runs from its app bundle."))
+                    .font(.caption)
+                    .foregroundStyle(defaultBrowserError == nil ? Color.secondary : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -75,6 +99,7 @@ private struct SettingsView: View {
             compactView = AppSettings.compactView
             hiddenFiles = AppSettings.showsHiddenFiles
             startLocation = AppSettings.startLocation
+            driveLetters = AppSettings.showsDriveLetters
         }
     }
 

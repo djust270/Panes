@@ -68,7 +68,8 @@ public enum ExplorerLocation: Sendable, Hashable {
         return chain.reversed()
     }
 
-    static func isVolumeRoot(_ url: URL) -> Bool {
+    /// Whether `url` is the root of a volume (a "drive").
+    public static func isVolumeRoot(_ url: URL) -> Bool {
         if url.path == "/" { return true }
         let values = try? url.resourceValues(forKeys: [.isVolumeKey])
         return values?.isVolume ?? false

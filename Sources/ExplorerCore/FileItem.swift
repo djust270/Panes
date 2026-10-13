@@ -27,6 +27,8 @@ public struct FileItem: Sendable, Hashable, Identifiable {
     public var trashInfo: TrashInfo?
     /// Tags, dimensions and duration; `nil` until read with `FilePropertiesReader`.
     public var properties: FileProperties?
+    /// The drive, for This PC's items; `nil` elsewhere.
+    public var volume: MountedVolume?
 
     public var id: URL { url }
 

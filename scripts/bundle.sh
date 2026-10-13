@@ -45,6 +45,35 @@ cat > "$app/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key>           <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>    <true/>
     <key>NSSupportsAutomaticTermination</key> <false/>
+    <!-- Opens folders (listed under Open With; can be made the default in Settings). -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>       <string>Folder</string>
+            <key>CFBundleTypeRole</key>       <string>Viewer</string>
+            <key>LSHandlerRank</key>          <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.folder</string><string>public.volume</string></array>
+        </dict>
+    </array>
+    <!-- Services menu: Open in Explorer (folders), Reveal in Explorer (anything). -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>       <dict><key>default</key><string>Open in $APP_NAME</string></dict>
+            <key>NSMessage</key>        <string>openInExplorer</string>
+            <key>NSPortName</key>       <string>$APP_NAME</string>
+            <key>NSRequiredContext</key> <dict/>
+            <key>NSSendFileTypes</key>  <array><string>public.folder</string></array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>       <dict><key>default</key><string>Reveal in $APP_NAME</string></dict>
+            <key>NSMessage</key>        <string>revealInExplorer</string>
+            <key>NSPortName</key>       <string>$APP_NAME</string>
+            <key>NSRequiredContext</key> <dict/>
+            <key>NSSendFileTypes</key>  <array><string>public.item</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

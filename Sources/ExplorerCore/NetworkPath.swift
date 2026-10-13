@@ -61,15 +61,39 @@ public struct NetworkPath: Sendable, Hashable {
         }
     }
 
-    static func sameShare(_ lhs: URL, _ rhs: URL) -> Bool {
-        func key(_ url: URL) -> String? {
-            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                  let host = components.host else { return nil }
-            let share = components.path.split(separator: "/").first.map(String.init) ?? ""
-            let decoded = share.removingPercentEncoding ?? share
-            return "\(components.scheme?.lowercased() ?? "")://\(host.lowercased())/\(decoded.lowercased())"
-        }
-        guard let left = key(lhs) else { return false }
-        return left == key(rhs)
+    /// Whether two URLs name the same share, ignoring the user name and case.
+    public static func sameShare(_ lhs: URL, _ rhs: URL) -> Bool {
+        let left = shareKey(lhs)
+        return !left.isEmpty && left == shareKey(rhs)
+    }
+
+    /// "smb://server/share", lowercased and without a user name: equal for URLs that name the
+    /// same share. Empty if `url` has no host.
+    public static func shareKey(_ url: URL) -> String {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let host = components.host else { return "" }
+        let share = components.path.split(separator: "/").first.map(String.init) ?? ""
+        let decoded = share.removingPercentEncoding ?? share
+        return "\(components.scheme?.lowercased() ?? "")://\(host.lowercased())/\(decoded.lowercased())"
+    }
+
+    /// `\\server\share`, the Windows form of an SMB share URL; `nil` for other protocols.
+    public static func uncPath(for shareURL: URL) -> String? {
+        guard let components = URLComponents(url: shareURL, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "smb", let host = components.host, !host.isEmpty else { return nil }
+        let parts = components.path.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }
+        return ([#"\\"# + host] + parts).joined(separator: #"\"#)
+    }
+
+    /// The server part of a share URL, e.g. `smb://server` (no user name), for "Network".
+    public static func serverURL(for shareURL: URL) -> URL? {
+        guard var components = URLComponents(url: shareURL, resolvingAgainstBaseURL: false),
+              components.host?.isEmpty == false else { return nil }
+        components.user = nil
+        components.password = nil
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url
     }
 }

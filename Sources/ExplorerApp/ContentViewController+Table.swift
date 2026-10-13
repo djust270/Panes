@@ -60,6 +60,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .type: return 120
         case .tags: return 120
         case .size, .dimensions, .duration: return 90
+        case .totalSize, .freeSpace: return 110
         }
     }
 
@@ -189,12 +190,14 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
         case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""
         case .dateCreated: return item.dateCreated.map { dateFormatter.string(from: $0) } ?? ""
-        case .type: return item.typeDescription
+        case .type: return mode == .network ? "Computer" : item.typeDescription
         case .size: return item.size.map { FileSizeFormat.string(for: $0) } ?? ""
         case .tags: return item.properties?.tagsText ?? ""
         case .dimensions: return item.properties?.dimensionsText ?? ""
         case .duration: return item.properties?.durationText ?? ""
         case .folder: return Self.displayPath(item.folderPath)
+        case .totalSize: return item.volume?.totalCapacity.map { FileSizeFormat.string(for: $0) } ?? ""
+        case .freeSpace: return item.volume?.availableCapacity.map { FileSizeFormat.string(for: $0) } ?? ""
         }
     }
 

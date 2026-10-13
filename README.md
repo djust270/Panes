@@ -28,9 +28,13 @@ To work in Xcode, open `Package.swift`.
   and undo inverses), `FileNaming`, `RecycleBin`, and the view model: `ViewMode`, `FileColumn`, `FileGrouper`,
   `FileListContent`, `FolderViewSettingsStore` (per-folder view memory), `FilePropertiesReader`, `LRUCache`,
   and UI rules kept testable: `KeyboardScheme` (Windows/Mac shortcut tables), `TypeAheadSelector`, `FileKind`
-  (the Filter menu), `TabStripLayout`. Must not import AppKit.
+  (the Filter menu), `TabStripLayout`; Phase 6's `MountedVolume`/`DriveStore` (drive letters, mapped drives),
+  `WindowsPath`, `ContentCounter`, `WindowsPermissions` (POSIX/ACL ↔ Windows permissions), `FileMetadata`,
+  `Archive` and `NetworkNeighborhood`. Must not import AppKit.
 - `Sources/ExplorerApp` — AppKit UI. `ExplorerWindowController` owns the title-bar tab strip; each tab is an
   `ExplorerTabController` (history, loading, commands) showing an `ExplorerRootViewController` (address bar,
   command bar, panes, status bar). `Theme` and `AppSettings` hold the Windows 11 look and the Settings window's
-  preferences; `MainMenu` takes every shortcut from the keyboard scheme.
+  preferences; `MainMenu` takes every shortcut from the keyboard scheme. `PropertiesWindowController` (General,
+  Security, Details tabs), `ExtractWizard`, `MapDriveDialog`, `DriveCenter` (volumes, letters, Eject),
+  `NetworkBrowser` (Bonjour) and `SystemIntegration` (folder handler, Services, default file viewer).
 - `Tests/ExplorerCoreTests` — Swift Testing suites.

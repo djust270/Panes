@@ -30,7 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = false
         settingsObserver = AppSettings.observe { [weak self] in self?.applySettings() }
         KeyboardShortcuts.installEventMonitors()
-        openWindow(at: Self.newTabLocation)
+        DriveCenter.start()
+        DriveCenter.reconnectMappedDrives()
+        SystemIntegration.start()
+        // Launched to open a folder: that's the window, not the start location.
+        if windowControllers.isEmpty { openWindow(at: Self.newTabLocation) }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -45,6 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Folders opened from Finder, `open -a`, or as the default folder viewer; files are
+    /// revealed. Arrives before `applicationDidFinishLaunching` when it launched the app.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        SystemIntegration.open(urls)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -97,10 +108,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.compactView.toggle()
     }
 
+    @objc func toggleDualPane(_ sender: Any?) {
+        AppSettings.dualPane.toggle()
+    }
+
     // MARK: Windows
 
     func openWindow(at location: ExplorerLocation) {
         show(ExplorerWindowController(location: location))
+    }
+
+    /// Opens `location` in a new tab of the frontmost window (or a new window), selecting
+    /// `items` once they're listed.
+    func showTab(at location: ExplorerLocation, selecting items: [URL]) {
+        let tab: ExplorerTabController?
+        let windows = NSApp.orderedWindows.lazy.compactMap { $0.windowController as? ExplorerWindowController }
+        if let front = windows.first {
+            let newTab = ExplorerTabController(location: location)
+            front.insert(newTab)
+            front.window?.makeKeyAndOrderFront(nil)
+            tab = newTab
+        } else {
+            let controller = ExplorerWindowController(location: location)
+            show(controller)
+            tab = controller.selectedTab
+        }
+        if !items.isEmpty { tab?.content.select(items) }
     }
 
     /// Opens a window for a tab dragged out of another window.
@@ -124,6 +157,8 @@ extension AppDelegate: NSMenuItemValidation {
             menuItem.state = AppSettings.showsHiddenFiles ? .on : .off
         case #selector(toggleCompactView(_:)):
             menuItem.state = AppSettings.compactView ? .on : .off
+        case #selector(toggleDualPane(_:)):
+            menuItem.state = AppSettings.dualPane ? .on : .off
         default:
             break
         }

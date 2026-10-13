@@ -63,6 +63,11 @@ enum MainMenu {
         menu.add("Open in New Window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Compress to ZIP File", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        menu.add("Extract All…", #selector(ExplorerTabController.extractAll(_:)), modifiers: [])
+        menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties,
+                 alternates: true)
         menu.addItem(.separator())
         menu.add("Restore", #selector(ExplorerTabController.restoreSelection(_:)))
         menu.add("Empty Recycle Bin…", #selector(ExplorerTabController.emptyRecycleBin(_:)))
@@ -99,6 +104,10 @@ enum MainMenu {
         menu.add("Paste", #selector(NSText.paste(_:)), command: .paste, alternates: true)
         menu.add("Copy as Path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath,
                  alternates: true)
+        menu.add("Copy as Windows Path", #selector(ExplorerTabController.copyAsWindowsPath(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.add("Copy to Other Pane", #selector(ExplorerTabController.copyToOtherPane(_:)), modifiers: [])
+        menu.add("Move to Other Pane", #selector(ExplorerTabController.moveToOtherPane(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename, alternates: true)
         menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete, alternates: true)
@@ -129,6 +138,7 @@ enum MainMenu {
                  alternates: true)
         menu.add("Details Pane", #selector(ExplorerTabController.toggleDetailsPane(_:)), command: .detailsPane,
                  alternates: true)
+        menu.add("Dual Pane", #selector(AppDelegate.toggleDualPane(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Compact View", #selector(AppDelegate.toggleCompactView(_:)), modifiers: [])
         menu.add("Item Check Boxes", #selector(ExplorerTabController.toggleItemCheckboxes(_:)), modifiers: [])
@@ -156,8 +166,11 @@ enum MainMenu {
         menu.add("Edit Address", #selector(ExplorerTabController.editAddress(_:)), command: .focusAddressBar,
                  alternates: true)
         menu.add("Search", #selector(ExplorerTabController.focusSearch(_:)), command: .search, alternates: true)
+        menu.add("Switch to Other Pane", #selector(ExplorerTabController.switchPane(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Home", #selector(ExplorerTabController.goHome(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.add("Map Network Drive…", #selector(ExplorerTabController.mapNetworkDrive(_:)), modifiers: [])
         return menu
     }
 

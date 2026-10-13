@@ -15,7 +15,7 @@ extension ContentViewController {
     }
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        guard mode != .volumes, !isRenaming, let item = listContent.item(atRow: row) else { return nil }
+        guard listsFiles, !isRenaming, let item = listContent.item(atRow: row) else { return nil }
         return item.url as NSURL
     }
 
@@ -52,7 +52,7 @@ extension ContentViewController {
     }
 
     private func validateDrop(_ info: NSDraggingInfo, into target: ExplorerLocation?) -> NSDragOperation {
-        guard let dropHandler, mode != .volumes else { return [] }
+        guard let dropHandler, listsFiles else { return [] }
         if let urls = Self.fileURLs(in: info.draggingPasteboard) {
             return dropHandler.dropOperation(for: urls, into: target, sourceMask: info.draggingSourceOperationMask)
         }
@@ -108,14 +108,14 @@ extension ContentViewController {
         canDragItemsAt indexPaths: Set<IndexPath>,
         with event: NSEvent
     ) -> Bool {
-        mode != .volumes && !isRenaming
+        listsFiles && !isRenaming
     }
 
     func collectionView(
         _ collectionView: NSCollectionView,
         pasteboardWriterForItemAt indexPath: IndexPath
     ) -> NSPasteboardWriting? {
-        guard mode != .volumes, !isRenaming,
+        guard listsFiles, !isRenaming,
               let item = listContent.item(section: indexPath.section, index: indexPath.item) else { return nil }
         return item.url as NSURL
     }

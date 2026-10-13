@@ -227,7 +227,7 @@ extension ExplorerTabController: NSMenuItemValidation {
             return inRecycleBin && !content.allItems.isEmpty
         default:
             return validateViewMenuItem(menuItem) ?? validateCommandMenuItem(menuItem)
-                ?? validateSearchMenuItem(menuItem) ?? true
+                ?? validateSearchMenuItem(menuItem) ?? validateToolsMenuItem(menuItem) ?? true
         }
     }
 }

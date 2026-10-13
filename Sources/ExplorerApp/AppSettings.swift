@@ -47,6 +47,8 @@ enum AppSettings {
         static let hiddenFiles = "ShowHiddenFiles"
         static let compactView = "CompactView"
         static let startLocation = "StartLocation"
+        static let driveLetters = "ShowDriveLetters"
+        static let dualPane = "DualPane"
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -88,6 +90,18 @@ enum AppSettings {
     static var startLocation: StartLocation {
         get { defaults.string(forKey: Key.startLocation).flatMap(StartLocation.init) ?? .home }
         set { set(newValue.rawValue, for: Key.startLocation) }
+    }
+
+    /// Drive letters after volume names ("Macintosh HD (C:)"), as on Windows. Off by default.
+    static var showsDriveLetters: Bool {
+        get { defaults.bool(forKey: Key.driveLetters) }
+        set { set(newValue, for: Key.driveLetters) }
+    }
+
+    /// A second, independent pane beside the current tab, for copying between folders.
+    static var dualPane: Bool {
+        get { defaults.bool(forKey: Key.dualPane) }
+        set { set(newValue, for: Key.dualPane) }
     }
 
     private static func set(_ value: Any, for key: String) {

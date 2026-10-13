@@ -34,11 +34,18 @@ final class ContentViewController: NSViewController {
         case home
         /// Search results: adds the Folder column.
         case search
+        /// Network: computers, opened by connecting to them. No file operations.
+        case network
     }
+
+    /// Network's computers aren't files: no drags, drops or thumbnails.
+    var listsFiles: Bool { mode != .volumes && mode != .network }
 
     private static let checkboxesKey = "ShowItemCheckboxes"
 
     var onNavigate: ((ExplorerLocation) -> Void)?
+    /// Opening a computer under Network.
+    var onConnect: ((URL) -> Void)?
     /// Middle-click or "Open in new tab" on a folder.
     var onOpenInNewTab: ((ExplorerLocation) -> Void)?
     var onSelectionChange: (() -> Void)?
@@ -207,7 +214,7 @@ final class ContentViewController: NSViewController {
 
         isApplyingSettings = true
         applyTableSettings()
-        let isGrouped = settings.grouping != nil || mode == .home
+        let isGrouped = settings.grouping != nil || mode == .home || mode == .volumes
         let layout = collectionView.collectionViewLayout as? FileCollectionLayout
         let isHome = mode == .home
         if layout?.viewMode != settings.viewMode || layout?.isGrouped != isGrouped || layout?.isHome != isHome {
@@ -296,6 +303,8 @@ final class ContentViewController: NSViewController {
     func rebuild(selecting selection: Set<URL>, scroll: Bool) {
         if mode == .home {
             listContent = FileListContent(groups: homeGroups, collapsedGroups: collapsedGroups)
+        } else if mode == .volumes {
+            listContent = FileListContent(groups: driveGroups(), collapsedGroups: collapsedGroups)
         } else {
             let shown = kindFilter.filter(settings.needsProperties ? itemsWithProperties() : items)
             listContent = FileListContent(
@@ -386,6 +395,10 @@ final class ContentViewController: NSViewController {
     @objc func activateSelection() {
         let selected = selectedItems
         guard !selected.isEmpty, mode != .recycleBin else { return }
+        if mode == .network {
+            if let computer = selected.first { onConnect?(computer.url) }
+            return
+        }
         if selected.count == 1, let only = selected.first, only.isFolder {
             onNavigate?(.folder(only.url))
             return
@@ -416,7 +429,7 @@ final class ContentViewController: NSViewController {
 
     /// Middle-click on a folder opens it in a new tab.
     func openInNewTab(_ item: FileItem) {
-        guard item.isFolder, mode != .recycleBin else { return }
+        guard item.isFolder, mode != .recycleBin, mode != .network else { return }
         onOpenInNewTab?(.folder(item.url))
     }
 
@@ -437,7 +450,8 @@ final class ContentViewController: NSViewController {
     // MARK: Display helpers
 
     func icon(for item: FileItem) -> NSImage {
-        NSWorkspace.shared.icon(forFile: item.url.path)
+        if mode == .network { return NSImage(named: NSImage.computerName) ?? NSImage() }
+        return NSWorkspace.shared.icon(forFile: item.url.path)
     }
 
     func isCut(_ item: FileItem) -> Bool {

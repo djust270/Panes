@@ -72,22 +72,46 @@ extension ContentViewController: NSMenuDelegate {
             menu.addItem(.separator())
             menu.addItem(MainMenu.newSubmenuItem())
             menu.addItem(.separator())
+            menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
             menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+            menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
         case (.recycleBin, true):
             menu.add("Restore", #selector(ExplorerTabController.restoreSelection(_:)))
             menu.addItem(.separator())
             menu.add("Cut", #selector(NSText.cut(_:)), command: .cut)
             menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
+            menu.addItem(.separator())
+            menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
         case (.recycleBin, false):
             addViewItems(to: menu)
             menu.add("Empty Recycle Bin", #selector(ExplorerTabController.emptyRecycleBin(_:)))
             menu.add("Restore all items", #selector(ExplorerTabController.restoreAll(_:)))
-        case (.volumes, true):
+        case (.volumes, _), (.network, _):
+            addDriveCommands(to: menu, onItem: onItem, volumes: selection.compactMap(\.volume))
+        }
+    }
+
+    /// This PC's and Network's menus: Open, Eject or Disconnect, Map network drive, Properties.
+    private func addDriveCommands(to menu: NSMenu, onItem: Bool, volumes: [MountedVolume]) {
+        if onItem {
             menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open)
-            menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
-            menu.add("Open in new window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
-        case (.volumes, false):
+            if mode == .volumes {
+                menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
+                menu.add("Open in new window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
+            }
+            menu.addItem(.separator())
+        } else {
             addViewItems(to: menu)
+        }
+        if volumes.contains(where: \.canEject) {
+            let network = volumes.allSatisfy { $0.kind == .network }
+            menu.add(network ? "Disconnect" : "Eject", #selector(ExplorerTabController.ejectSelection(_:)),
+                     modifiers: [])
+        }
+        menu.add("Map network drive…", #selector(ExplorerTabController.mapNetworkDrive(_:)), modifiers: [])
+        if mode == .volumes, onItem {
+            menu.addItem(.separator())
+            menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
         }
     }
 
@@ -116,12 +140,22 @@ extension ContentViewController: NSMenuDelegate {
         if mode == .search || mode == .home {
             menu.add("Open file location", #selector(ExplorerTabController.openFileLocation(_:)), modifiers: [])
         }
+        let selection = selectedItems
+        if selection.count == 1, let only = selection.first {
+            if only.kind == .file, Archive.isExtractable(only.url), mode != .home {
+                menu.add("Extract All…", #selector(ExplorerTabController.extractAll(_:)), modifiers: [])
+            }
+            if only.isFolder {
+                menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
+            }
+        }
         menu.addItem(.separator())
         addQuickAccessItems(to: menu)
         if mode == .folder {
             menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
         }
         menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+        menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
         menu.addItem(.separator())
         menu.addItem(moreOptionsItem())
     }
@@ -220,6 +254,15 @@ extension ContentViewController: NSMenuDelegate {
         submenu.addItem(.separator())
         submenu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
         submenu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename)
+        if AppSettings.dualPane {
+            submenu.addItem(.separator())
+            submenu.add("Copy to other pane", #selector(ExplorerTabController.copyToOtherPane(_:)), modifiers: [])
+            submenu.add("Move to other pane", #selector(ExplorerTabController.moveToOtherPane(_:)), modifiers: [])
+        }
+        if let tab = dropHandler as? ExplorerTabController, tab.canCopyAsWindowsPath {
+            submenu.addItem(.separator())
+            submenu.add("Copy as Windows path", #selector(ExplorerTabController.copyAsWindowsPath(_:)), modifiers: [])
+        }
         let item = NSMenuItem(title: "Show more options", action: nil, keyEquivalent: "")
         item.image = NSImage(systemSymbolName: "ellipsis.rectangle", accessibilityDescription: nil)
         item.submenu = submenu

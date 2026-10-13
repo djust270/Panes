@@ -14,6 +14,10 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
     case duration
     /// Search results only: the folder holding the item.
     case folder
+    /// This PC only.
+    case totalSize = "total-size"
+    /// This PC only.
+    case freeSpace = "free-space"
 
     public var title: String {
         switch self {
@@ -28,6 +32,8 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
         case .dimensions: return "Dimensions"
         case .duration: return "Duration"
         case .folder: return "Folder"
+        case .totalSize: return "Total Size"
+        case .freeSpace: return "Free Space"
         }
     }
 
@@ -44,6 +50,8 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
         case .dimensions: return .dimensions
         case .duration: return .duration
         case .folder: return .folder
+        case .totalSize: return .totalSize
+        case .freeSpace: return .freeSpace
         }
     }
 
@@ -55,7 +63,9 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
 
     /// Columns that can be shown in a list of the given kind.
     public static func available(in kind: FileListKind) -> [FileColumn] {
-        allCases.filter { $0.onlyIn == nil || $0.onlyIn == kind }
+        // Drives have no dates, tags or media properties.
+        if kind == .drives { return [.name, .type, .totalSize, .freeSpace] }
+        return allCases.filter { $0.onlyIn == nil || $0.onlyIn == kind }
     }
 }
 
@@ -66,4 +76,6 @@ public enum FileListKind: Sendable, Hashable {
     case recycleBin
     /// Adds Folder.
     case searchResults
+    /// This PC: Name, Type, Total Size and Free Space.
+    case drives
 }

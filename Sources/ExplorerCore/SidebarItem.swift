@@ -90,16 +90,24 @@ public enum SidebarTree {
         return items
     }
 
-    /// Children of an expandable root. `[]` for every leaf item, and for Network (Bonjour/SMB
-    /// discovery is Phase 6).
-    public static func children(of item: SidebarItem) -> [SidebarItem] {
+    /// Children of an expandable root: This PC's volumes; `[]` for everything else.
+    /// - Parameter names: display names by mount point (e.g. with drive letters); the volume
+    ///   name otherwise.
+    public static func children(of item: SidebarItem, names: [URL: String] = [:]) -> [SidebarItem] {
         guard item.id == thisPCID else { return [] }
         return VolumeLister.mountedVolumes().map { volume in
-            SidebarItem(
+            let url = volume.url.standardizedFileURL
+            let symbol: String
+            switch volume.kind {
+            case .local: symbol = "internaldrive"
+            case .removable: symbol = "externaldrive"
+            case .network: symbol = "server.rack"
+            }
+            return SidebarItem(
                 id: "volume-\(volume.url.path)",
-                title: volume.name,
-                symbolName: volume.isInternal ? "internaldrive" : "externaldrive",
-                location: .folder(volume.url.standardizedFileURL)
+                title: names[url] ?? volume.name,
+                symbolName: symbol,
+                location: .folder(url)
             )
         }
     }

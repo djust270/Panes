@@ -30,6 +30,15 @@ public struct FolderViewSettings: Sendable, Hashable, Codable {
         columns: [.name, .dateModified, .type, .size, .folder]
     )
 
+    /// Network: computers as tiles.
+    public static let networkDefault = FolderViewSettings(viewMode: .tiles, columns: [.name, .type])
+
+    /// This PC: drive tiles with capacity bars, as on Windows.
+    public static let drivesDefault = FolderViewSettings(
+        viewMode: .tiles,
+        columns: [.name, .type, .totalSize, .freeSpace]
+    )
+
     /// Whether the items need `FileProperties` (tags, dimensions, duration) for what's shown.
     public var needsProperties: Bool {
         sort.key.needsProperties || (viewMode == .details && columns.contains(where: \.needsProperties))
@@ -40,8 +49,14 @@ public struct FolderViewSettings: Sendable, Hashable, Codable {
     public func sanitized(for kind: FileListKind) -> FolderViewSettings {
         func fits(_ onlyIn: FileListKind?) -> Bool { onlyIn == nil || onlyIn == kind }
         var result = self
+        if kind == .drives {
+            // This PC has fixed groups (drives, network locations) and only drive columns.
+            let available = FileColumn.available(in: .drives)
+            result.columns.removeAll { !available.contains($0) }
+            result.grouping = nil
+        }
         result.columns.removeAll { !fits($0.onlyIn) }
-        if !fits(result.sort.key.onlyIn) { result.sort = FileItemSort() }
+        if !result.sort.key.isAvailable(in: kind) { result.sort = FileItemSort() }
         if let grouping = result.grouping, !fits(grouping.key.onlyIn) { result.grouping = nil }
         var seen = Set<FileColumn>()
         result.columns = [.name] + result.columns.filter { $0 != .name && seen.insert($0).inserted }
@@ -58,7 +73,8 @@ extension ExplorerLocation {
         case .recycleBin: return "recycle-bin"
         case .thisPC: return "this-pc"
         case .search: return "search"
-        case .home, .network: return nil
+        case .network: return "network"
+        case .home: return nil
         }
     }
 
@@ -67,6 +83,7 @@ extension ExplorerLocation {
         switch self {
         case .recycleBin: return .recycleBin
         case .search: return .searchResults
+        case .thisPC: return .drives
         default: return .folder
         }
     }
@@ -115,9 +132,11 @@ public final class FolderViewSettingsStore {
         if let key = location.viewSettingsKey, let entry = storage.entries[key] {
             return entry.settings.sanitized(for: kind)
         }
+        if location == .network { return .networkDefault }
         switch kind {
         case .recycleBin: return .recycleBinDefault
         case .searchResults: return .searchDefault
+        case .drives: return .drivesDefault
         case .folder: return folderDefault
         }
     }

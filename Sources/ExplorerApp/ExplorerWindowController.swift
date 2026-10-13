@@ -19,6 +19,11 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
 
     private let tabStrip = TabStripView()
     private let tabContainer = NSView()
+    /// The selected tab, and in dual-pane mode the second pane beside it.
+    private let paneSplit = NSSplitView()
+    private let primaryPane = NSView()
+    /// Dual-pane mode's second pane: a tab of its own that isn't in the tab strip.
+    private(set) var companion: ExplorerTabController?
     /// Undo for text being edited (rename, address bar), kept apart from file operations.
     private let textUndoManager = UndoManager()
     private var observers: [NSObjectProtocol] = []
@@ -116,7 +121,22 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
             tabContainer.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             tabContainer.bottomAnchor.constraint(equalTo: background.bottomAnchor),
         ])
+        paneSplit.isVertical = true
+        paneSplit.dividerStyle = .thin
+        paneSplit.addArrangedSubview(primaryPane)
+        Self.fill(tabContainer, with: paneSplit)
         return background
+    }
+
+    private static func fill(_ container: NSView, with view: NSView) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
     }
 
     // MARK: Settings
@@ -132,6 +152,30 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         tabStrip.leadingInset = windowsButtons || fullScreen ? 8 : 78
         updateTabStrip()
         positionTrafficLights()
+        setDualPane(AppSettings.dualPane)
+    }
+
+    // MARK: Dual pane
+
+    /// Shows or hides the second pane. It starts where new tabs start, and is forgotten when
+    /// hidden.
+    private func setDualPane(_ enabled: Bool) {
+        guard enabled != (companion != nil) else { return }
+        if enabled {
+            let pane = ExplorerTabController(location: AppDelegate.newTabLocation)
+            pane.rootViewController.isCompanion = true
+            pane.host = self
+            companion = pane
+            paneSplit.addArrangedSubview(pane.view)
+            paneSplit.layoutSubtreeIfNeeded()
+            paneSplit.setPosition(paneSplit.bounds.width / 2, ofDividerAt: 0)
+        } else if let pane = companion {
+            let hadFocus = (window?.firstResponder as? NSView)?.isDescendant(of: pane.view) == true
+            companion = nil
+            pane.view.removeFromSuperview()
+            pane.close()
+            if hadFocus { selectedTab?.focusContent() }
+        }
     }
 
     /// Centres the traffic lights on the tab strip, which is taller than the title bar, and
@@ -192,17 +236,9 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         let previous = selectedTab
         selectedIndex = index
         let tab = tabs[index]
-        if previous !== tab || tab.view.superview !== tabContainer {
+        if previous !== tab || tab.view.superview !== primaryPane {
             previous?.view.removeFromSuperview()
-            let view = tab.view
-            view.translatesAutoresizingMaskIntoConstraints = false
-            tabContainer.addSubview(view)
-            NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: tabContainer.topAnchor),
-                view.leadingAnchor.constraint(equalTo: tabContainer.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: tabContainer.trailingAnchor),
-                view.bottomAnchor.constraint(equalTo: tabContainer.bottomAnchor),
-            ])
+            Self.fill(primaryPane, with: tab.view)
             tab.focusContent()
         }
         updateTabStrip()
@@ -348,6 +384,8 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         for tab in tabs { tab.close() }
         tabs = []
+        companion?.close()
+        companion = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         onClose?()
@@ -358,7 +396,13 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
 
 extension ExplorerWindowController: TabHosting {
     func tabDidChangeTitle(_ tab: ExplorerTabController) {
+        guard tab !== companion else { return }
         updateTabStrip()
+    }
+
+    func otherPane(of tab: ExplorerTabController) -> ExplorerTabController? {
+        guard let companion else { return nil }
+        return tab === companion ? selectedTab : companion
     }
 
     func openTab(at location: ExplorerLocation, besides tab: ExplorerTabController, select: Bool) {

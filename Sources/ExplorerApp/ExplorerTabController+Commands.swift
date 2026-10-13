@@ -52,19 +52,16 @@ extension ExplorerTabController {
         open(files, with: app)
     }
 
-    /// "Open with ▸ Choose another app…".
+    /// "Open with ▸ Choose another app…", with "Always use this app to open .ext files".
     @objc func openWithOtherApp(_ sender: Any?) {
         let files = content.selectedItems.filter { !$0.isFolder }.map(\.url)
-        guard !files.isEmpty else { return }
-        let panel = NSOpenPanel()
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.allowedContentTypes = [.application]
-        panel.prompt = "Open"
-        panel.message = "Choose an app to open “\(files[0].lastPathComponent)”"
+        guard !files.isEmpty, let window = view.window else { return }
         Task {
-            guard let window = view.window, await panel.beginSheetModal(for: window) == .OK,
-                  let app = panel.url else { return }
-            open(files, with: app)
+            guard let choice = await DefaultApps.chooseApp(for: files, in: window, offerAlways: true) else { return }
+            if choice.always, let error = await DefaultApps.setDefault(choice.app, for: files[0]) {
+                await inform("Couldn’t make it the default app. \(error)")
+            }
+            open(files, with: choice.app)
         }
     }
 
@@ -148,7 +145,7 @@ extension ExplorerTabController {
         }
         rootViewController.statusBar.text = "Compressing…"
         Task {
-            let failure = await Self.run(arguments.tool, arguments.args, in: folder)
+            let failure = await CommandLineTool.run(arguments.tool, arguments.args, in: folder)
             updateStatusBar()
             if let failure {
                 try? FileManager.default.removeItem(at: archive)
@@ -160,31 +157,48 @@ extension ExplorerTabController {
         }
     }
 
-    /// Runs a command-line tool off the main thread; returns its error output on failure.
-    private static func run(_ tool: String, _ arguments: [String], in directory: URL) async -> String? {
-        await Task.detached(priority: .userInitiated) { () -> String? in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: tool)
-            process.arguments = arguments
-            process.currentDirectoryURL = directory
-            let errors = Pipe()
-            process.standardError = errors
-            process.standardOutput = FileHandle.nullDevice
-            do {
-                try process.run()
-            } catch {
-                return error.localizedDescription
+    // MARK: Properties
+
+    /// Properties (Alt+Enter): of the selection, or of the folder when nothing is selected.
+    @objc func showProperties(_ sender: Any?) {
+        PropertiesWindowController.show(propertiesTargets)
+    }
+
+    private var propertiesTargets: [URL] {
+        if !selectedURLs.isEmpty { return selectedURLs }
+        return currentFolder.map { [$0] } ?? []
+    }
+
+    // MARK: Drives
+
+    /// "Map network drive…": connects to a share and remembers it with a drive letter.
+    @objc func mapNetworkDrive(_ sender: Any?) {
+        guard let window = view.window else { return }
+        // From a computer under Network, start with its address.
+        var folder = ""
+        if history.current == .network, let host = content.selectedItems.first?.url.host {
+            folder = #"\\"# + host + #"\"#
+        }
+        Task {
+            guard let choice = await MapDriveDialog.ask(folder: folder, on: window) else { return }
+            connect(to: choice.path, signIn: choice.differentCredentials ? .ask : .automatic) { _ in
+                DriveCenter.map(MappedDrive(shareURL: choice.path.shareURL, letter: choice.letter,
+                                            reconnects: choice.reconnects))
             }
-            let output = errors.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus != 0 else { return nil }
-            return (String(data: output, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        }.value
+        }
+    }
+
+    /// Eject (disks) or Disconnect (network drives), from This PC.
+    @objc func ejectSelection(_ sender: Any?) {
+        for volume in content.selectedItems.compactMap(\.volume) where volume.canEject {
+            DriveCenter.eject(at: volume.url, from: view.window)
+        }
     }
 
     // MARK: Validation
 
-    /// Validates the commands above; `nil` for anything else.
+    // Validates the commands above; `nil` for anything else.
+    // swiftlint:disable:next cyclomatic_complexity
     func validateCommandMenuItem(_ menuItem: NSMenuItem) -> Bool? {
         let selection = content.selectedItems
         let inFolder = currentFolder != nil
@@ -207,6 +221,10 @@ extension ExplorerTabController {
             return !selection.isEmpty && inFolder
         case #selector(copyAsPath(_:)):
             return !selection.isEmpty || inFolder
+        case #selector(showProperties(_:)):
+            return !propertiesTargets.isEmpty
+        case #selector(ejectSelection(_:)):
+            return selection.contains { $0.volume?.canEject == true }
         default:
             return nil
         }

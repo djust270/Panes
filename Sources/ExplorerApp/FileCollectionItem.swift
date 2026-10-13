@@ -76,6 +76,10 @@ struct ItemDetailText {
     var line3 = ""
     var right1 = ""
     var right2 = ""
+    /// A drive's used space (0…1), drawn as a capacity bar in place of `line2`.
+    var capacity: Double?
+    /// Draws the capacity bar red, as Windows does for a nearly full drive.
+    var capacityIsLow = false
 }
 
 /// Draws an item: a rounded selection/hover highlight, the icon, the name and (Tiles,
@@ -88,6 +92,7 @@ final class FileItemView: NSView {
     private let line3 = FileItemView.detailLabel()
     private let right1 = FileItemView.detailLabel()
     private let right2 = FileItemView.detailLabel()
+    private let capacityBar = CapacityBarView()
 
     var viewMode: ViewMode = .mediumIcons {
         didSet {
@@ -109,7 +114,8 @@ final class FileItemView: NSView {
         nameField.font = Theme.font(ofSize: 12)
         nameField.cell?.truncatesLastVisibleLine = true
         checkbox.isHidden = true
-        for subview in [iconView, nameField, line2, line3, right1, right2, checkbox] {
+        capacityBar.isHidden = true
+        for subview in [iconView, nameField, line2, line3, right1, right2, capacityBar, checkbox] {
             addSubview(subview)
         }
         applyMode()
@@ -125,6 +131,10 @@ final class FileItemView: NSView {
         line3.stringValue = details.line3
         right1.stringValue = details.right1
         right2.stringValue = details.right2
+        capacityBar.fraction = details.capacity ?? 0
+        capacityBar.isLow = details.capacityIsLow
+        capacityBar.isHidden = details.capacity == nil || viewMode != .tiles
+        line2.isHidden = !capacityBar.isHidden || (viewMode != .tiles && viewMode != .content && viewMode != .details)
     }
 
     private static func detailLabel() -> NSTextField {
@@ -188,6 +198,7 @@ final class FileItemView: NSView {
             nameField.frame = NSRect(x: x, y: top, width: width - x - 4, height: 16)
             line2.frame = NSRect(x: x, y: top + 16, width: width - x - 4, height: 15)
             line3.frame = NSRect(x: x, y: top + 31, width: width - x - 4, height: 15)
+            capacityBar.frame = NSRect(x: x, y: top + 20, width: max(0, min(200, width - x - 12)), height: 8)
         case .content:
             iconView.frame = NSRect(x: 8 + inset, y: (height - icon) / 2, width: icon, height: icon)
             let x = 58 + inset
@@ -236,5 +247,31 @@ final class FileItemView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
+    }
+}
+
+/// A drive's capacity bar: used space in the accent colour, or red when nearly full.
+final class CapacityBarView: NSView {
+    var fraction: Double = 0 { didSet { needsDisplay = true } }
+    var isLow = false { didSet { needsDisplay = true } }
+
+    private static let trackColor = NSColor.dynamic(
+        light: NSColor(white: 0, alpha: 0.1),
+        dark: NSColor(white: 1, alpha: 0.14)
+    )
+    /// Windows' "critical" red.
+    private static let lowColor = NSColor(hex: 0xC42B1C)
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = bounds.height / 2
+        Self.trackColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        guard fraction > 0 else { return }
+        var used = bounds
+        used.size.width = max(bounds.height, bounds.width * CGFloat(fraction))
+        (isLow ? Self.lowColor : Theme.accent).setFill()
+        NSBezierPath(roundedRect: used, xRadius: radius, yRadius: radius).fill()
     }
 }

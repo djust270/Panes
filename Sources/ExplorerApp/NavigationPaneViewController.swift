@@ -16,6 +16,7 @@ final class NavigationPaneViewController: NSViewController {
     private var childrenCache: [String: [SidebarItem]] = [:]
     private var roots = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)
     private var quickAccessObserver: NSObjectProtocol?
+    private var driveObserver: NSObjectProtocol?
     /// The location last passed to `select(_:)`, to re-select after the pins change.
     private var selectedLocation: ExplorerLocation?
     /// Set while `select(_:)` is driving the selection programmatically, so
@@ -64,12 +65,24 @@ final class NavigationPaneViewController: NSViewController {
             outlineView.expandItem(root)
         }
         quickAccessObserver = QuickAccess.observe { [weak self] in self?.reloadPins() }
+        driveObserver = DriveCenter.observe { [weak self] in self?.reloadDrives() }
     }
 
-    /// Stops following Quick access. Called when the tab closes.
+    /// Stops following Quick access and drives. Called when the tab closes.
     func close() {
-        quickAccessObserver.map(NotificationCenter.default.removeObserver)
+        for observer in [quickAccessObserver, driveObserver].compactMap({ $0 }) {
+            NotificationCenter.default.removeObserver(observer)
+        }
         quickAccessObserver = nil
+        driveObserver = nil
+    }
+
+    /// Re-reads This PC's volumes after a mount, unmount or drive-letter change.
+    private func reloadDrives() {
+        guard let thisPC = roots.first(where: { $0.id == SidebarTree.thisPCID }) else { return }
+        childrenCache[thisPC.id] = nil
+        outlineView.reloadItem(thisPC, reloadChildren: true)
+        if let selectedLocation { select(selectedLocation) }
     }
 
     /// Rebuilds the roots if Quick access's pins changed.
@@ -118,7 +131,11 @@ final class NavigationPaneViewController: NSViewController {
 
     private func children(of item: SidebarItem) -> [SidebarItem] {
         if let cached = childrenCache[item.id] { return cached }
-        let children = SidebarTree.children(of: item)
+        var names: [URL: String] = [:]
+        for (volume, letter) in DriveCenter.volumes() {
+            names[volume.url.standardizedFileURL] = DriveCenter.displayName(volume, letter: letter)
+        }
+        let children = SidebarTree.children(of: item, names: names)
         childrenCache[item.id] = children
         return children
     }
@@ -264,8 +281,22 @@ extension NavigationPaneViewController: NSMenuDelegate {
                                      keyEquivalent: "")
         newWindow.target = self
         newWindow.representedObject = location
+        if location == .thisPC || location == .network {
+            menu.addItem(.separator())
+            // No target: travels the responder chain to the tab.
+            menu.addItem(withTitle: "Map network drive…", action: #selector(ExplorerTabController.mapNetworkDrive(_:)),
+                         keyEquivalent: "")
+        }
 
         guard let folder = location.fileURL else { return }
+        let volume = VolumeLister.volume(at: folder)
+        if ExplorerLocation.isVolumeRoot(folder), volume.canEject {
+            menu.addItem(.separator())
+            let eject = menu.addItem(withTitle: volume.kind == .network ? "Disconnect" : "Eject",
+                                     action: #selector(ejectVolume(_:)), keyEquivalent: "")
+            eject.target = self
+            eject.representedObject = folder
+        }
         menu.addItem(.separator())
         let isPinned = (outlineView.item(atRow: clickedRow) as? SidebarItem)?.isPinnedFolder == true
             || QuickAccess.store.isPinned(folder)
@@ -277,6 +308,15 @@ extension NavigationPaneViewController: NSMenuDelegate {
         pin.target = self
         pin.representedObject = folder
         pin.tag = isPinned ? 1 : 0
+        menu.addItem(.separator())
+        let properties = menu.addItem(withTitle: "Properties", action: #selector(showProperties(_:)), keyEquivalent: "")
+        properties.target = self
+        properties.representedObject = folder
+    }
+
+    @objc private func showProperties(_ sender: NSMenuItem) {
+        guard let folder = sender.representedObject as? URL else { return }
+        PropertiesWindowController.show([folder])
     }
 
     @objc private func togglePin(_ sender: NSMenuItem) {
@@ -288,6 +328,11 @@ extension NavigationPaneViewController: NSMenuDelegate {
                 store.pin(folder)
             }
         }
+    }
+
+    @objc private func ejectVolume(_ sender: NSMenuItem) {
+        guard let volume = sender.representedObject as? URL else { return }
+        DriveCenter.eject(at: volume, from: view.window)
     }
 
     fileprivate func location(atRow row: Int) -> ExplorerLocation? {

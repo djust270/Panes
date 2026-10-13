@@ -8,6 +8,8 @@ protocol TabHosting: AnyObject {
     func tabDidChangeTitle(_ tab: ExplorerTabController)
     /// Opens `location` in a new tab next to `tab`.
     func openTab(at location: ExplorerLocation, besides tab: ExplorerTabController, select: Bool)
+    /// In dual-pane mode, the pane beside `tab`.
+    func otherPane(of tab: ExplorerTabController) -> ExplorerTabController?
 }
 
 /// One Explorer tab. Owns the navigation history, loads and watches the current location,
@@ -74,6 +76,10 @@ final class ExplorerTabController: NSViewController {
         content.onNavigate = { [weak self] location in
             self?.navigate(to: location)
         }
+        content.onConnect = { [weak self] server in
+            guard let path = NetworkPath(server.absoluteString) else { return }
+            self?.connect(to: path)
+        }
         content.onOpenInNewTab = { [weak self] location in
             guard let self else { return }
             host?.openTab(at: location, besides: self, select: false)
@@ -116,10 +122,39 @@ final class ExplorerTabController: NSViewController {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.settingsDidChange() }
         })
+        observeLocations()
+    }
+
+    /// Reloads Home, This PC and Network when what they show changes; leaves an ejected drive.
+    private func observeLocations() {
         observers.append(QuickAccess.observe { [weak self] in
             guard let self, history.current == .home else { return }
             reload()
         })
+        observers.append(DriveCenter.observe { [weak self] in
+            guard let self, history.current == .thisPC || history.current == .network else { return }
+            reload()
+        })
+        observers.append(NetworkBrowser.observe { [weak self] in
+            guard let self, history.current == .network else { return }
+            reload()
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: DriveCenter.didUnmountNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let volume = notification.object as? URL else { return }
+            MainActor.assumeIsolated { self?.volumeDidUnmount(volume) }
+        })
+    }
+
+    /// A folder on an ejected drive goes to This PC, as on Windows.
+    private func volumeDidUnmount(_ volume: URL) {
+        guard history.current.fileURL != nil || inSearchResults, let folder = searchScope else { return }
+        let root = volume.standardizedFileURL.pathComponents
+        guard folder.standardizedFileURL.pathComponents.starts(with: root) else { return }
+        navigate(to: .thisPC)
     }
 
     private func connectAddressBar() {
@@ -191,12 +226,18 @@ final class ExplorerTabController: NSViewController {
         show(destination)
     }
 
-    /// Mounts a network share typed into the address bar, then opens it.
-    func connect(to path: NetworkPath) {
+    /// Mounts a network share typed into the address bar (or a computer under Network, or a
+    /// drive being mapped), then opens it.
+    func connect(
+        to path: NetworkPath,
+        signIn: NetworkShareMounter.SignIn = .automatic,
+        onMounted: ((URL) -> Void)? = nil
+    ) {
         rootViewController.statusBar.text = "Connecting to \(path.shareURL.absoluteString)…"
         Task {
-            switch await NetworkShareMounter.mount(path) {
+            switch await NetworkShareMounter.mount(path, signIn: signIn) {
             case .mounted(let folder):
+                onMounted?(folder)
                 navigate(to: .folder(folder))
             case .cancelled:
                 updateStatusBar()
@@ -240,7 +281,9 @@ final class ExplorerTabController: NSViewController {
         case .folder(let url):
             mode = .folder
             QuickAccess.recordVisit(to: url)
-        case .network: mode = .folder
+        case .network:
+            mode = .network
+            NetworkBrowser.shared.start()
         }
         content.show(mode: mode, settings: settings)
         rootViewController.statusBar.setViewMode(content.settings.viewMode)
@@ -270,10 +313,7 @@ final class ExplorerTabController: NSViewController {
 
         switch history.current {
         case .thisPC:
-            let items = VolumeLister.mountedVolumes().map { volume in
-                FileItem(url: volume.url.standardizedFileURL, name: volume.name, kind: .directory)
-            }
-            content.setItems(items)
+            content.setItems(DriveCenter.items())
             updateStatusBar()
         case .recycleBin:
             loadRecycleBin()
@@ -295,9 +335,11 @@ final class ExplorerTabController: NSViewController {
         case .search(let text, let scope):
             runSearch(text, in: scope)
         case .network:
-            content.showUnavailable("\(history.current.displayName) isn't available yet.")
-            rootViewController.statusBar.text = ""
-            commandBar.validate()
+            let items = NetworkBrowser.shared.computers().map { computer in
+                FileItem(url: computer.url, name: computer.name, kind: .directory)
+            }
+            content.setItems(items)
+            updateStatusBar()
         }
     }
 
