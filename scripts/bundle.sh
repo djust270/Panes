@@ -37,6 +37,8 @@ cp "$bin_dir/ExplorerApp" "$app/Contents/MacOS/$APP_NAME"
 # SwiftPM links Sparkle from beside the binary (@loader_path); in the bundle it's in Frameworks.
 ditto "$bin_dir/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/$APP_NAME" 2>/dev/null
+# The icon is drawn by a script rather than kept as an image (preview: swift scripts/make-icon.swift icon.png).
+swift scripts/make-icon.swift "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -48,6 +50,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key>         <string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key>         <string>$APP_NAME</string>
     <key>CFBundlePackageType</key>        <string>APPL</string>
+    <key>CFBundleIconFile</key>           <string>AppIcon</string>
     <key>CFBundleShortVersionString</key> <string>$VERSION</string>
     <key>CFBundleVersion</key>            <string>$BUILD_NUMBER</string>
     <key>CFBundleInfoDictionaryVersion</key> <string>6.0</string>

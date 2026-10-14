@@ -17,6 +17,7 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 | Test incl. 100k-file perf check | `EXPLORER_PERF_TESTS=1 scripts/test.sh` |
 | Test incl. cross-volume ops on an exFAT disk image | `EXPLORER_VOLUME_TESTS=1 scripts/test.sh` |
 | Build `build/Panes.app` | `scripts/bundle.sh` |
+| Preview the app icon (drawn by `scripts/make-icon.swift`) | `swift scripts/make-icon.swift icon.png` |
 | Signed + notarized build | `SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh && scripts/notarize.sh` |
 | DMG from `build/Panes.app` | `VERSION=0.2.0 scripts/dmg.sh` |
 | Release (app + DMG notarized, Sparkle-signed, appcast item) | `SIGN_IDENTITY=… scripts/release.sh 0.2.0 7`; `DRY_RUN=1` to try it unsigned, `PUBLISH=1` to create the GitHub release and push `appcast.xml` |
