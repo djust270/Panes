@@ -158,22 +158,28 @@ final class RubberBandView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = Theme.accent.withAlphaComponent(0.15).cgColor
-        layer?.borderColor = Theme.accent.withAlphaComponent(0.8).cgColor
+        // Windows 98 draws a plain outline.
+        let classic = Theme.isClassic
+        layer?.backgroundColor = classic ? NSColor.clear.cgColor : Theme.accent.withAlphaComponent(0.15).cgColor
+        layer?.borderColor = classic ? Classic.text.cgColor : Theme.accent.withAlphaComponent(0.8).cgColor
     }
 }
 
 /// Windows 11 list selection: a rounded, lightly tinted fill inset from the edges, with the
-/// text left in its normal colour; and a subtle highlight under the mouse.
+/// text left in its normal colour; and a subtle highlight under the mouse. Windows 98: a
+/// square navy bar with white text, and no hover.
 final class ExplorerRowView: NSTableRowView {
     /// The navigation pane uses a neutral grey instead of the accent colour.
     var usesNeutralSelection = false
     private var isHovered = false { didSet { needsDisplay = true } }
 
-    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        Theme.isClassic && isSelected && isEmphasized ? .emphasized : .normal
+    }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        let fill = usesNeutralSelection
+        // Windows 98's tree selects like its lists: navy when focused, grey when not.
+        let fill = usesNeutralSelection && !Theme.isClassic
             ? Theme.navigationSelectionColor
             : Theme.selectionColor(emphasized: isEmphasized, hovered: isHovered)
         fill.setFill()
@@ -189,6 +195,7 @@ final class ExplorerRowView: NSTableRowView {
     }
 
     private var selectionPath: NSBezierPath {
+        if Theme.isClassic { return NSBezierPath(rect: bounds) }
         // Adjacent selected rows merge into one block, as on Windows.
         let rect = bounds.insetBy(dx: 4, dy: 0)
         var top: CGFloat = isPreviousRowSelected ? 0 : 1
@@ -214,5 +221,66 @@ final class ExplorerRowView: NSTableRowView {
     override func prepareForReuse() {
         super.prepareForReuse()
         isHovered = false
+    }
+}
+
+/// Details' column headers: native in Windows 11 style, raised grey buttons in Windows 98's.
+final class FileHeaderView: NSTableHeaderView {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard Theme.isClassic, let tableView else { return }
+        // The empty space after the last column is a header button too.
+        let end = tableView.tableColumns.indices.filter { !tableView.tableColumns[$0].isHidden }
+            .map { headerRect(ofColumn: $0).maxX }.max() ?? 0
+        guard end < bounds.maxX else { return }
+        let rest = NSRect(x: end, y: bounds.minY, width: bounds.maxX - end, height: bounds.height)
+        Classic.face.setFill()
+        rest.fill()
+        Bevel.raised.draw(in: rest, flipped: isFlipped)
+    }
+}
+
+final class FileHeaderCell: NSTableHeaderCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        guard Theme.isClassic else {
+            super.draw(withFrame: cellFrame, in: controlView)
+            return
+        }
+        Classic.face.setFill()
+        cellFrame.fill()
+        Bevel.raised.draw(in: cellFrame, flipped: controlView.isFlipped)
+        drawInterior(withFrame: cellFrame, in: controlView)
+    }
+
+    override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+        guard Theme.isClassic else {
+            super.drawInterior(withFrame: cellFrame, in: controlView)
+            return
+        }
+        let title = NSAttributedString(string: stringValue, attributes: [
+            .font: Theme.font(ofSize: 12),
+            .foregroundColor: Classic.text,
+        ])
+        var rect = cellFrame.insetBy(dx: 6, dy: 0)
+        // The sort column keeps an indicator: a small triangle at the right, pointing up when
+        // ascending. (AppKit draws the cell from a copy, so the column is found by its title.)
+        if let tableView = (controlView as? NSTableHeaderView)?.tableView,
+           let sort = tableView.sortDescriptors.first,
+           let column = tableView.tableColumns.first(where: { $0.title == stringValue }),
+           column.sortDescriptorPrototype?.key == sort.key {
+            let midY = cellFrame.midY.rounded()
+            let tip: CGFloat = sort.ascending == controlView.isFlipped ? -3 : 3
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: rect.maxX - 8, y: midY - tip))
+            path.line(to: NSPoint(x: rect.maxX, y: midY - tip))
+            path.line(to: NSPoint(x: rect.maxX - 4, y: midY + tip))
+            path.close()
+            Classic.text.setFill()
+            path.fill()
+            rect.size.width -= 12
+        }
+        let height = title.size().height
+        title.draw(with: NSRect(x: rect.minX, y: cellFrame.midY - height / 2, width: rect.width, height: height),
+                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }

@@ -9,7 +9,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     func configureTableView() {
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.style = .fullWidth
-        tableView.backgroundColor = Theme.bodyColor
+        tableView.backgroundColor = Theme.paneColor
         tableView.intercellSpacing = NSSize(width: 6, height: 0)
         tableView.allowsTypeSelect = false
         tableView.allowsMultipleSelection = true
@@ -34,12 +34,14 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         }
         tableView.dragColumnIdentifier = Self.identifier(.name)
         tableView.menu = makeContextMenu()
+        tableView.headerView = FileHeaderView(frame: tableView.headerView?.frame ?? .zero)
         tableView.headerView?.menu = makeHeaderMenu()
         configureDragAndDrop()
 
         let widths = UserDefaults.standard.dictionary(forKey: Self.columnWidthsKey) as? [String: Double] ?? [:]
         for column in FileColumn.allCases {
             let tableColumn = NSTableColumn(identifier: Self.identifier(column))
+            tableColumn.headerCell = FileHeaderCell(textCell: column.title)
             tableColumn.title = column.title
             tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: true)
             tableColumn.minWidth = column == .name ? 120 : 50
@@ -142,6 +144,9 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
             ?? makeCell(for: column, identifier: cellIdentifier)
 
         cell.textField?.stringValue = text(for: column, item: item)
+        // Set on every use, so reused cells follow a style change. Windows 98 has no grey columns.
+        cell.textField?.font = Theme.font(ofSize: 12)
+        if column != .name { cell.textField?.textColor = Theme.isClassic ? .labelColor : .secondaryLabelColor }
         if let nameCell = cell as? NameCellView {
             nameCell.imageView?.image = icon(for: item)
             nameCell.showsCheckbox = showsCheckboxes

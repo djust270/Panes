@@ -4,7 +4,7 @@ import ExplorerCore
 /// Address bar: breadcrumb segments (title + chevron-dropdown-to-children) built from
 /// `ExplorerLocation.ancestry`, or — when the user clicks empty background — an editable
 /// path text field that also accepts network paths (`\\server\share`, `smb://…`).
-final class BreadcrumbBarView: NSView {
+final class BreadcrumbBarView: NSView, StyleObserving {
     var onNavigate: ((ExplorerLocation) -> Void)?
     var onNetworkPath: ((NetworkPath) -> Void)?
     /// Editing the path ended (Return or Escape); focus should go back to the files.
@@ -15,6 +15,7 @@ final class BreadcrumbBarView: NSView {
     private let pathField = NSTextField()
     private var location: ExplorerLocation?
     private var isEditing = false
+    private var height: NSLayoutConstraint?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -27,7 +28,8 @@ final class BreadcrumbBarView: NSView {
     }
 
     private func setUp() {
-        heightAnchor.constraint(equalToConstant: 26).isActive = true
+        height = heightAnchor.constraint(equalToConstant: Self.barHeight)
+        height?.isActive = true
 
         stackView.orientation = .horizontal
         stackView.alignment = .centerY
@@ -68,6 +70,14 @@ final class BreadcrumbBarView: NSView {
             stackView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             stackView.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
         ])
+    }
+
+    private static var barHeight: CGFloat { Theme.isClassic ? 18 : 26 }
+
+    func styleDidChange() {
+        height?.constant = Self.barHeight
+        pathField.font = Theme.font(ofSize: 13)
+        if !isEditing { rebuildSegments() }
     }
 
     func setLocation(_ location: ExplorerLocation) {

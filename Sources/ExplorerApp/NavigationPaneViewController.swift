@@ -31,7 +31,7 @@ final class NavigationPaneViewController: NSViewController {
         outlineView.outlineTableColumn = column
         outlineView.headerView = nil
         outlineView.style = .plain
-        outlineView.backgroundColor = Theme.bodyColor
+        outlineView.backgroundColor = Theme.paneColor
         outlineView.rowSizeStyle = .custom
         outlineView.rowHeight = Theme.navigationRowHeight
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
@@ -53,13 +53,7 @@ final class NavigationPaneViewController: NSViewController {
         scrollView.drawsBackground = false
 
         let container = NSView()
-        container.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
+        BevelView.embed(scrollView, in: container)
         view = container
 
         outlineView.reloadData()
@@ -245,6 +239,7 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
         }
 
         cell.textField?.stringValue = sidebarItem.title
+        cell.textField?.font = Theme.font(ofSize: 12) // reused cells follow a style change
         cell.imageView?.image = NSImage(systemSymbolName: sidebarItem.symbolName, accessibilityDescription: nil)
         return cell
     }
@@ -352,12 +347,14 @@ extension NavigationPaneViewController: NSMenuDelegate {
         AppDelegate.shared.openWindow(at: location)
     }
 
-    /// Re-applies Compact view and colours after settings change.
+    /// Re-applies Compact view, colours and fonts after settings change.
     func applyTheme() {
         guard isViewLoaded else { return }
         outlineView.rowHeight = Theme.navigationRowHeight
-        outlineView.backgroundColor = Theme.bodyColor
-        outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<outlineView.numberOfRows))
+        outlineView.backgroundColor = Theme.paneColor
+        let rows = IndexSet(integersIn: 0..<outlineView.numberOfRows)
+        outlineView.noteHeightOfRows(withIndexesChanged: rows)
+        outlineView.reloadData(forRowIndexes: rows, columnIndexes: [0])
         outlineView.needsDisplay = true
     }
 }

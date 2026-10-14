@@ -177,19 +177,22 @@ final class ContentViewController: NSViewController {
         configureCollectionView()
         collectionScrollView.documentView = collectionView
 
+        // Both lists share one frame (Windows 98's sunken one).
+        let lists = NSView()
         for scrollView in [tableScrollView, collectionScrollView] {
             scrollView.hasVerticalScroller = true
             scrollView.hasHorizontalScroller = true
             scrollView.autohidesScrollers = true
             scrollView.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(scrollView)
+            lists.addSubview(scrollView)
             NSLayoutConstraint.activate([
-                scrollView.topAnchor.constraint(equalTo: container.topAnchor),
-                scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                scrollView.topAnchor.constraint(equalTo: lists.topAnchor),
+                scrollView.leadingAnchor.constraint(equalTo: lists.leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: lists.trailingAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: lists.bottomAnchor),
             ])
         }
+        BevelView.embed(lists, in: container)
 
         unavailableLabel.textColor = .secondaryLabelColor
         unavailableLabel.alignment = .center
@@ -480,8 +483,8 @@ final class ContentViewController: NSViewController {
     func applyTheme() {
         guard isViewLoaded else { return }
         tableView.rowHeight = Theme.detailsRowHeight
-        collectionView.backgroundColors = [Theme.bodyColor]
-        tableView.backgroundColor = Theme.bodyColor
+        collectionView.backgroundColors = [Theme.paneColor]
+        tableView.backgroundColor = Theme.paneColor
         if isDetailsMode {
             tableView.reloadData()
             setSelection(selectedURLs, scroll: false)

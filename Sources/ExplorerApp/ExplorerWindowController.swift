@@ -27,6 +27,10 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     /// Undo for text being edited (rename, address bar), kept apart from file operations.
     private let textUndoManager = UndoManager()
     private var observers: [NSObjectProtocol] = []
+    /// The Mica-style background; hidden in Windows 98 style.
+    private let mica = NSVisualEffectView()
+    /// The style the views were last laid out for.
+    private var appliedStyle: AppSettings.VisualStyle?
 
     var selectedTab: ExplorerTabController? {
         tabs.indices.contains(selectedIndex) ? tabs[selectedIndex] : nil
@@ -86,7 +90,6 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
     /// The translucent layer sits *behind* the content as a sibling: views inside an
     /// `NSVisualEffectView` draw with vibrancy, which washes text out against a dark background.
     private func makeContentView() -> NSView {
-        let mica = NSVisualEffectView()
         mica.material = .underWindowBackground
         mica.blendingMode = .behindWindow
         mica.state = .followsWindowActiveState
@@ -143,6 +146,7 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
 
     private func applySettings() {
         Theme.applyAppearance()
+        applyStyle()
         let windowsButtons = AppSettings.windowsCaptionButtons
         for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             window?.standardWindowButton(kind)?.isHidden = windowsButtons
@@ -153,6 +157,19 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
         updateTabStrip()
         positionTrafficLights()
         setDualPane(AppSettings.dualPane)
+    }
+
+    /// Windows 11 or Windows 98: after a switch, every tab (shown or not) picks up the new
+    /// fonts and metrics and redraws.
+    private func applyStyle() {
+        let style = AppSettings.visualStyle
+        mica.isHidden = style == .classic
+        guard style != appliedStyle else { return }
+        let isFirst = appliedStyle == nil
+        appliedStyle = style
+        guard !isFirst, let contentView = window?.contentView else { return }
+        Theme.restyle(contentView)
+        for tab in tabs where tab.view.superview == nil { Theme.restyle(tab.view) }
     }
 
     // MARK: Dual pane
@@ -211,10 +228,12 @@ final class ExplorerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         positionTrafficLights()
+        tabStrip.needsDisplay = true // Windows 98's title bar greys out when inactive
     }
 
     func windowDidResignKey(_ notification: Notification) {
         positionTrafficLights()
+        tabStrip.needsDisplay = true
     }
 
     // MARK: Tabs

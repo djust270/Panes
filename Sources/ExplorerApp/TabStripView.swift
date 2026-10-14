@@ -22,6 +22,9 @@ protocol TabStripDelegate: AnyObject {
 /// others are separated by thin lines and highlight on hover. Tabs can be reordered, dragged
 /// to another window, or dragged out into a new window. Optional Windows-style caption buttons
 /// sit on the right. Empty space drags the window; double-clicking it zooms.
+///
+/// In Windows 98 style the strip is the title bar's navy gradient, with property-sheet tabs
+/// standing on the grey face below.
 @MainActor
 final class TabStripView: NSView {
     struct Tab: Equatable {
@@ -62,6 +65,7 @@ final class TabStripView: NSView {
         super.init(frame: frameRect)
         newTabButton.target = self
         newTabButton.action = #selector(newTab)
+        newTabButton.classicForeground = Classic.highlight
         addSubview(newTabButton)
         captionButtons.isHidden = true
         addSubview(captionButtons)
@@ -126,9 +130,15 @@ final class TabStripView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if Theme.isClassic {
+            Classic.captionGradient(active: window?.isKeyWindow ?? true)?.draw(in: bounds, angle: 0)
+            // The top edge of the raised face the tabs stand on.
+            Classic.highlight.setFill()
+            NSRect(x: 0, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
+        }
         guard let insertionIndex else { return }
         let x = tabsArea.x + CGFloat(insertionIndex) * tabWidth
-        Theme.accent.setFill()
+        (Theme.isClassic ? Classic.highlight : Theme.accent).setFill()
         NSRect(x: x - 1, y: 8, width: 2, height: bounds.height - 12).fill()
     }
 
@@ -292,7 +302,7 @@ enum TabDragging {
 
 /// One tab: icon, title and a close button (shown on the selected or hovered tab).
 @MainActor
-private final class TabView: NSView {
+private final class TabView: NSView, StyleObserving {
     weak var strip: TabStripView?
     var index = 0
     var tab = TabStripView.Tab(title: "", icon: NSImage()) {
@@ -338,9 +348,14 @@ private final class TabView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
+    func styleDidChange() {
+        titleField.font = Theme.font(ofSize: 12)
+        stateChanged()
+    }
+
     private func stateChanged() {
         closeButton.isHidden = !(isSelected || isHovered) || bounds.width < 90
-        titleField.textColor = isSelected ? .labelColor : .secondaryLabelColor
+        titleField.textColor = Theme.isClassic ? Classic.text : (isSelected ? .labelColor : .secondaryLabelColor)
         setAccessibilityValue(isSelected)
         needsLayout = true
         needsDisplay = true
@@ -358,6 +373,10 @@ private final class TabView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if Theme.isClassic {
+            drawClassicTab()
+            return
+        }
         if isSelected {
             let radius = Theme.tabCornerRadius
             let rect = bounds
@@ -381,6 +400,27 @@ private final class TabView: NSView {
             Theme.dividerColor.setFill()
             NSRect(x: bounds.maxX - 1, y: bounds.midY - 8, width: 1, height: 16).fill()
         }
+    }
+
+    /// A Windows 98 property-sheet tab: raised on the top and sides, open at the bottom. The
+    /// selected tab is taller and joins the face below; the others stand back on its edge.
+    private func drawClassicTab() {
+        var rect = bounds
+        if !isSelected {
+            rect = NSRect(x: rect.minX + 1, y: rect.minY + 2, width: rect.width - 2, height: rect.height - 3)
+        }
+        Classic.face.setFill()
+        NSRect(x: rect.minX + 1, y: rect.minY + 1, width: rect.width - 2, height: rect.height - 1).fill()
+        NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: rect.height - 2).fill()
+        Classic.highlight.setFill()
+        NSRect(x: rect.minX, y: rect.minY + 2, width: 1, height: rect.height - 2).fill()
+        NSRect(x: rect.minX + 1, y: rect.minY + 1, width: 1, height: 1).fill()
+        NSRect(x: rect.minX + 2, y: rect.minY, width: rect.width - 4, height: 1).fill()
+        Classic.darkShadow.setFill()
+        NSRect(x: rect.maxX - 1, y: rect.minY + 2, width: 1, height: rect.height - 2).fill()
+        NSRect(x: rect.maxX - 2, y: rect.minY + 1, width: 1, height: 1).fill()
+        Classic.shadow.setFill()
+        NSRect(x: rect.maxX - 2, y: rect.minY + 2, width: 1, height: rect.height - 2).fill()
     }
 
     // MARK: Mouse
@@ -449,101 +489,4 @@ private final class TabView: NSView {
         isHovered = false
         strip?.tabDidChangeHover()
     }
-}
-
-// MARK: - Caption buttons
-
-/// Windows-style minimise, maximise/restore and close buttons (46 × 40 pt, close turns red).
-@MainActor
-private final class CaptionButtonsView: NSView {
-    static let width: CGFloat = 46 * 3
-
-    private let minimize = CaptionButton(symbol: "minus", label: "Minimize")
-    private let maximize = CaptionButton(symbol: "square", label: "Maximize")
-    private let close = CaptionButton(symbol: "xmark", label: "Close", isClose: true)
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        minimize.target = self
-        minimize.action = #selector(minimizeWindow)
-        maximize.target = self
-        maximize.action = #selector(zoomWindow)
-        close.target = self
-        close.action = #selector(closeWindow)
-        [minimize, maximize, close].forEach(addSubview)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    override var isFlipped: Bool { true }
-
-    override func layout() {
-        super.layout()
-        for (index, button) in [minimize, maximize, close].enumerated() {
-            button.frame = NSRect(x: CGFloat(index) * 46, y: 0, width: 46, height: bounds.height)
-        }
-        let zoomed = window?.isZoomed == true
-        maximize.symbol = zoomed ? "square.on.square" : "square"
-        maximize.toolTip = zoomed ? "Restore Down" : "Maximize"
-    }
-
-    @objc private func minimizeWindow() { window?.performMiniaturize(nil) }
-    @objc private func zoomWindow() { window?.performZoom(nil) }
-    @objc private func closeWindow() { window?.performClose(nil) }
-}
-
-@MainActor
-private final class CaptionButton: NSButton {
-    private let isClose: Bool
-    private var isHovered = false { didSet { needsDisplay = true } }
-    var symbol: String { didSet { updateImage() } }
-
-    init(symbol: String, label: String, isClose: Bool = false) {
-        self.symbol = symbol
-        self.isClose = isClose
-        super.init(frame: .zero)
-        isBordered = false
-        title = ""
-        toolTip = label
-        setAccessibilityLabel(label)
-        refusesFirstResponder = true
-        updateImage()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    private func updateImage() {
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: toolTip)?
-            .withSymbolConfiguration(.init(pointSize: 10, weight: .light))
-        imagePosition = .imageOnly
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        if isHovered || isHighlighted {
-            let fill: NSColor = isClose
-                ? NSColor(hex: 0xC42B1C, alpha: isHighlighted ? 0.85 : 1)
-                : (isHighlighted ? Theme.pressedColor : Theme.hoverColor)
-            fill.setFill()
-            bounds.fill()
-        }
-        contentTintColor = isClose && isHovered ? .white : .labelColor
-        cell?.drawInterior(withFrame: bounds, in: self)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self))
-    }
-
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
-    override var mouseDownCanMoveWindow: Bool { false }
 }

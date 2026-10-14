@@ -84,7 +84,8 @@ struct ItemDetailText {
 }
 
 /// Draws an item: a rounded selection/hover highlight, the icon, the name and (Tiles,
-/// Content) detail lines, laid out by hand for each view mode.
+/// Content) detail lines, laid out by hand for each view mode. In Windows 98 style only the
+/// name is highlighted, navy with white text.
 final class FileItemView: NSView {
     let iconView = NSImageView()
     let nameField = NSTextField(labelWithString: "")
@@ -131,7 +132,6 @@ final class FileItemView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         iconView.imageScaling = .scaleProportionallyUpOrDown
-        nameField.font = Theme.font(ofSize: 12)
         nameField.cell?.truncatesLastVisibleLine = true
         checkbox.isHidden = true
         checkbox.setAccessibilityLabel("Select")
@@ -139,6 +139,7 @@ final class FileItemView: NSView {
         for subview in [iconView, nameField, line2, line3, right1, right2, capacityBar, checkbox] {
             addSubview(subview)
         }
+        applyFonts()
         applyMode()
     }
 
@@ -148,6 +149,7 @@ final class FileItemView: NSView {
     }
 
     func setDetails(_ details: ItemDetailText) {
+        applyFonts()
         line2.stringValue = details.line2
         line3.stringValue = details.line3
         right1.stringValue = details.right1
@@ -156,6 +158,12 @@ final class FileItemView: NSView {
         capacityBar.isLow = details.capacityIsLow
         capacityBar.isHidden = details.capacity == nil || viewMode != .tiles
         line2.isHidden = !capacityBar.isHidden || (viewMode != .tiles && viewMode != .content && viewMode != .details)
+    }
+
+    /// Set whenever the item is configured, so reused items follow a style change.
+    private func applyFonts() {
+        nameField.font = Theme.font(ofSize: 12)
+        for label in [line2, line3, right1, right2] { label.font = Theme.font(ofSize: 11) }
     }
 
     private static func detailLabel() -> NSTextField {
@@ -183,6 +191,7 @@ final class FileItemView: NSView {
     private func stateChanged() {
         checkbox.isHidden = !showsCheckbox || !(isSelected || isHovered)
         checkbox.state = isSelected ? .on : .off
+        nameField.textColor = Theme.isClassic && isSelected ? Classic.selectionText : .labelColor
         needsLayout = true
         needsDisplay = true
     }
@@ -219,7 +228,9 @@ final class FileItemView: NSView {
             nameField.frame = NSRect(x: x, y: top, width: width - x - 4, height: 16)
             line2.frame = NSRect(x: x, y: top + 16, width: width - x - 4, height: 15)
             line3.frame = NSRect(x: x, y: top + 31, width: width - x - 4, height: 15)
-            capacityBar.frame = NSRect(x: x, y: top + 20, width: max(0, min(200, width - x - 12)), height: 8)
+            let barHeight: CGFloat = Theme.isClassic ? 12 : 8
+            capacityBar.frame = NSRect(x: x, y: top + 24 - barHeight / 2, width: max(0, min(200, width - x - 12)),
+                                       height: barHeight)
         case .content:
             iconView.frame = NSRect(x: 8 + inset, y: (height - icon) / 2, width: icon, height: icon)
             let x = 58 + inset
@@ -232,6 +243,10 @@ final class FileItemView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if Theme.isClassic {
+            drawClassic()
+            return
+        }
         let highlight = bounds.insetBy(dx: 1, dy: 1)
         let path = NSBezierPath(roundedRect: highlight, xRadius: 4, yRadius: 4)
         if isDropTarget {
@@ -248,6 +263,21 @@ final class FileItemView: NSView {
             NSColor.separatorColor.setFill()
             NSRect(x: 8, y: bounds.maxY - 1, width: bounds.width - 16, height: 1).fill()
         }
+    }
+
+    /// Navy behind the name only, hugging the text; a navy outline for a drop target.
+    private func drawClassic() {
+        if isDropTarget {
+            Classic.selection.setFill()
+            bounds.insetBy(dx: 1, dy: 1).frame(withWidth: 1)
+        }
+        guard isSelected, let cell = nameField.cell else { return }
+        let field = nameField.frame
+        let size = cell.cellSize(forBounds: field)
+        let width = min(field.width, size.width)
+        let x = nameField.alignment == .center ? field.midX - width / 2 : field.minX
+        Classic.selection.setFill()
+        NSRect(x: x - 1, y: field.minY, width: width + 2, height: min(field.height, size.height)).integral.fill()
     }
 
     // MARK: Hover
@@ -294,6 +324,10 @@ final class CapacityBarView: NSView {
     override func accessibilityValue() -> Any? { "\(Int((fraction * 100).rounded()))%" }
 
     override func draw(_ dirtyRect: NSRect) {
+        if Theme.isClassic {
+            drawClassic()
+            return
+        }
         let radius = bounds.height / 2
         Self.trackColor.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
@@ -302,5 +336,20 @@ final class CapacityBarView: NSView {
         used.size.width = max(bounds.height, bounds.width * CGFloat(fraction))
         (isLow ? Self.lowColor : Theme.accent).setFill()
         NSBezierPath(roundedRect: used, xRadius: radius, yRadius: radius).fill()
+    }
+
+    /// Windows 98's progress bar: a thin sunken track filled with blocks.
+    private func drawClassic() {
+        Classic.window.setFill()
+        bounds.fill()
+        Bevel.thinSunken.draw(in: bounds, flipped: true)
+        let inner = bounds.insetBy(dx: 2, dy: 2)
+        let used = inner.width * CGFloat(fraction)
+        (isLow ? Self.lowColor : Classic.selection).setFill()
+        var x = inner.minX
+        while x < inner.minX + used {
+            NSRect(x: x, y: inner.minY, width: min(6, inner.maxX - x), height: inner.height).fill()
+            x += 8
+        }
     }
 }

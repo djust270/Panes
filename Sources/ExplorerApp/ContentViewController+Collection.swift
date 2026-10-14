@@ -14,7 +14,7 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
         collectionView.allowsEmptySelection = true
-        collectionView.backgroundColors = [Theme.bodyColor]
+        collectionView.backgroundColors = [Theme.paneColor]
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(FileCollectionItem.self, forItemWithIdentifier: FileCollectionItem.identifier)

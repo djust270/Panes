@@ -197,13 +197,40 @@ final class CommandBarView: NSView {
     }
 
     private static func separator() -> NSView {
-        let line = LayerView(color: Theme.dividerColor)
+        let line = ToolbarSeparator()
         line.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            line.widthAnchor.constraint(equalToConstant: 1),
-            line.heightAnchor.constraint(equalToConstant: 20),
-        ])
+        line.heightAnchor.constraint(equalToConstant: 20).isActive = true
         return line
+    }
+}
+
+/// A thin vertical line between groups of buttons; etched in Windows 98 style.
+final class ToolbarSeparator: NSView, StyleObserving {
+    private lazy var width = widthAnchor.constraint(equalToConstant: 1)
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        styleDidChange()
+        width.isActive = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func styleDidChange() {
+        width.constant = Theme.isClassic ? 2 : 1
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if Theme.isClassic {
+            Bevel.etchedLine(in: bounds, vertical: true, flipped: isFlipped)
+        } else {
+            Theme.dividerColor.setFill()
+            bounds.fill()
+        }
     }
 }
 

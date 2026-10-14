@@ -66,8 +66,13 @@ final class GroupHeaderView: NSView, NSCollectionViewElement {
     override func draw(_ dirtyRect: NSRect) {
         let start = titleButton.frame.maxX + 8
         guard start < bounds.maxX - 8 else { return }
+        let line = NSRect(x: start, y: bounds.midY.rounded(), width: bounds.maxX - 8 - start, height: 2)
+        if Theme.isClassic {
+            Bevel.etchedLine(in: line, vertical: false, flipped: isFlipped)
+            return
+        }
         NSColor.separatorColor.setFill()
-        NSRect(x: start, y: bounds.midY.rounded(), width: bounds.maxX - 8 - start, height: 1).fill()
+        NSRect(x: line.minX, y: line.minY, width: line.width, height: 1).fill()
     }
 
     override func layout() {

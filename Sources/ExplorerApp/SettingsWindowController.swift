@@ -142,6 +142,7 @@ private struct GeneralSettings: View {
 }
 
 private struct ViewSettings: View {
+    @State private var style = AppSettings.visualStyle
     @State private var appearance = AppSettings.appearance
     @State private var accent = AppSettings.accent
     @State private var captionButtons = AppSettings.windowsCaptionButtons
@@ -154,11 +155,19 @@ private struct ViewSettings: View {
     var body: some View {
         Form {
             Section {
+                Picker("Style:", selection: bind($style) { AppSettings.visualStyle = $0 }) {
+                    ForEach(AppSettings.VisualStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
                 Picker("Theme:", selection: bind($appearance) { AppSettings.appearance = $0 }) {
                     ForEach(AppSettings.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
+                .disabled(style == .classic)
                 LabeledContent("Accent colour:") {
                     AccentPicker(selection: bind($accent) { AppSettings.accent = $0 })
+                }
+                .disabled(style == .classic)
+                if style == .classic {
+                    Caption("Windows 98 is always light, with navy selection.")
                 }
                 Toggle("Window buttons on the right (Windows style)",
                        isOn: bind($captionButtons) { AppSettings.windowsCaptionButtons = $0 })
@@ -178,6 +187,7 @@ private struct ViewSettings: View {
         }
         .formStyle(.grouped)
         .onReceive(NotificationCenter.default.publisher(for: AppSettings.didChangeNotification)) { _ in
+            style = AppSettings.visualStyle
             appearance = AppSettings.appearance
             accent = AppSettings.accent
             captionButtons = AppSettings.windowsCaptionButtons

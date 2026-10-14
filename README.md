@@ -36,8 +36,8 @@ To work in Xcode, open `Package.swift`.
   `Archive` and `NetworkNeighborhood`. Must not import AppKit.
 - `Sources/ExplorerApp` — AppKit UI. `ExplorerWindowController` owns the title-bar tab strip; each tab is an
   `ExplorerTabController` (history, loading, commands) showing an `ExplorerRootViewController` (address bar,
-  command bar, panes, status bar). `Theme` and `AppSettings` hold the Windows 11 look and the Settings window's
-  preferences; `MainMenu` takes every shortcut from the keyboard scheme. `PropertiesWindowController` (General,
+  command bar, panes, status bar). `Theme` and `AppSettings` hold the Windows 11 look (and the optional Windows 98
+  one, drawn with `ClassicDrawing`) and the Settings window's preferences; `MainMenu` takes every shortcut from the keyboard scheme. `PropertiesWindowController` (General,
   Security, Details tabs), `ExtractWizard`, `MapDriveDialog`, `DriveCenter` (volumes, letters, Eject),
   `NetworkBrowser` (Bonjour) and `SystemIntegration` (folder handler, Services, default file viewer).
 - Phase 7: `FullDiskAccess` and `CrashReport` (ExplorerCore); `FullDiskAccessWindowController`, `LaunchAtLogin`,

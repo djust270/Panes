@@ -18,6 +18,18 @@ enum AppSettings {
         }
     }
 
+    /// The look of the window: today's Windows 11, or Windows 98's grey 3D one.
+    enum VisualStyle: String, CaseIterable {
+        case fluent, classic
+
+        var title: String {
+            switch self {
+            case .fluent: return "Windows 11"
+            case .classic: return "Windows 98"
+            }
+        }
+    }
+
     /// Windows' "Open File Explorer to": where new windows and tabs start.
     enum StartLocation: String, CaseIterable {
         case home, thisPC, homeFolder
@@ -42,6 +54,7 @@ enum AppSettings {
     private enum Key {
         static let keyboardScheme = "KeyboardScheme"
         static let appearance = "Appearance"
+        static let visualStyle = AppSettings.visualStyleKey
         static let accent = "AccentColor"
         static let captionButtons = "WindowsCaptionButtons"
         static let hiddenFiles = "ShowHiddenFiles"
@@ -53,6 +66,9 @@ enum AppSettings {
         static let crashReports = "OfferCrashReports"
         static let classicContextMenu = "ClassicContextMenu"
     }
+
+    /// Read by colour providers off the main thread (`Theme.isClassic`).
+    nonisolated static let visualStyleKey = "VisualStyle"
 
     /// Read by the updater off the main thread.
     nonisolated static let betaUpdatesKey = "BetaUpdates"
@@ -67,6 +83,11 @@ enum AppSettings {
     static var appearance: Appearance {
         get { defaults.string(forKey: Key.appearance).flatMap(Appearance.init) ?? .system }
         set { set(newValue.rawValue, for: Key.appearance) }
+    }
+
+    static var visualStyle: VisualStyle {
+        get { defaults.string(forKey: Key.visualStyle).flatMap(VisualStyle.init) ?? .fluent }
+        set { set(newValue.rawValue, for: Key.visualStyle) }
     }
 
     static var accent: AccentChoice {

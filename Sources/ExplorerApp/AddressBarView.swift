@@ -4,7 +4,7 @@ import ExplorerCore
 /// The row under the tabs: Back, Forward, Up and Refresh, the breadcrumb address bar, and the
 /// search box. Right-clicking Back or Forward lists the history, as on Windows.
 @MainActor
-final class AddressBarView: NSView {
+final class AddressBarView: NSView, StyleObserving {
     let breadcrumbBar = BreadcrumbBarView()
 
     var onGoBack: ((Int) -> Void)?
@@ -39,6 +39,7 @@ final class AddressBarView: NSView {
     private let addressField = LayerView(color: Theme.fieldColor)
     private let searchBox = LayerView(color: Theme.fieldColor)
     private let searchField = SearchField()
+    private var fieldHeights: [NSLayoutConstraint] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -60,8 +61,6 @@ final class AddressBarView: NSView {
 
         for box in [addressField, searchBox] {
             box.wantsLayer = true
-            box.layer?.cornerRadius = Theme.controlCornerRadius
-            box.layer?.borderWidth = 1
             box.translatesAutoresizingMaskIntoConstraints = false
         }
         configureSearchField()
@@ -77,25 +76,26 @@ final class AddressBarView: NSView {
 
         activateConstraints(buttons: buttons)
         updateTooltips()
+        styleDidChange()
     }
 
     private func activateConstraints(buttons: NSView) {
         let searchWidth = searchBox.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.28)
         searchWidth.priority = .defaultHigh
+        fieldHeights = [addressField, searchBox].map { $0.heightAnchor.constraint(equalToConstant: Theme.fieldHeight) }
+        NSLayoutConstraint.activate(fieldHeights)
         NSLayoutConstraint.activate([
             buttons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             buttons.centerYAnchor.constraint(equalTo: centerYAnchor),
             addressField.leadingAnchor.constraint(equalTo: buttons.trailingAnchor, constant: 8),
             addressField.trailingAnchor.constraint(equalTo: searchBox.leadingAnchor, constant: -8),
             addressField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            addressField.heightAnchor.constraint(equalToConstant: 32),
             breadcrumbBar.leadingAnchor.constraint(equalTo: addressField.leadingAnchor, constant: 4),
             breadcrumbBar.trailingAnchor.constraint(equalTo: addressField.trailingAnchor, constant: -4),
             breadcrumbBar.centerYAnchor.constraint(equalTo: addressField.centerYAnchor),
 
             searchBox.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             searchBox.centerYAnchor.constraint(equalTo: centerYAnchor),
-            searchBox.heightAnchor.constraint(equalToConstant: 32),
             searchWidth,
             searchBox.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
             searchBox.widthAnchor.constraint(lessThanOrEqualToConstant: 340),
@@ -118,6 +118,37 @@ final class AddressBarView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateBorder()
+    }
+
+    /// Windows 11's rounded, outlined boxes, or Windows 98's square ones in a sunken frame
+    /// (drawn by `draw(_:)`, around the boxes).
+    func styleDidChange() {
+        let classic = Theme.isClassic
+        for box in [addressField, searchBox] {
+            box.layer?.cornerRadius = Theme.controlCornerRadius
+            box.layer?.borderWidth = classic ? 0 : 1
+        }
+        for constraint in fieldHeights { constraint.constant = Theme.fieldHeight }
+        searchField.font = Theme.font(ofSize: 13)
+        // The magnifier keeps its position from the old height unless its cell is reset.
+        if let cell = searchField.cell as? NSSearchFieldCell {
+            cell.resetSearchButtonCell()
+            cell.resetCancelButtonCell()
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard Theme.isClassic else { return }
+        for box in [addressField, searchBox] {
+            let inset = -Bevel.sunkenField.width
+            Bevel.sunkenField.draw(in: box.frame.insetBy(dx: inset, dy: inset), flipped: isFlipped)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true
     }
 
     private func updateBorder() {

@@ -153,7 +153,7 @@ final class ExplorerRootViewController: NSViewController {
 /// Bottom status bar: "N items | M items selected 1.2 MB" on the left, and Windows' Details /
 /// Large icons layout buttons on the right.
 @MainActor
-final class StatusBarView: NSView {
+final class StatusBarView: NSView, StyleObserving {
     var text: String {
         get { label.stringValue }
         set { label.stringValue = newValue }
@@ -169,7 +169,7 @@ final class StatusBarView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         label.font = Theme.font(ofSize: NSFont.smallSystemFontSize)
-        label.textColor = .secondaryLabelColor
+        label.textColor = Theme.isClassic ? Classic.text : .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         detailsButton.target = self
         detailsButton.action = #selector(showDetails)
@@ -193,6 +193,24 @@ final class StatusBarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    func styleDidChange() {
+        label.font = Theme.font(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = Theme.isClassic ? Classic.text : .secondaryLabelColor
+        needsDisplay = true
+    }
+
+    /// Windows 98 puts the text in a sunken panel.
+    override func draw(_ dirtyRect: NSRect) {
+        guard Theme.isClassic else { return }
+        let panel = NSRect(x: 2, y: 2, width: max(0, detailsButton.frame.minX - 8), height: bounds.height - 4)
+        Bevel.thinSunken.draw(in: panel, flipped: isFlipped)
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true
     }
 
     /// Highlights the button for the current layout.

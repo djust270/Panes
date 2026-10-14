@@ -314,6 +314,25 @@ the crash prompt (bundled builds only), and VoiceOver itself.
   in both styles.
 - Fixed on the way: Tab in the address bar left it editing; clicking elsewhere now ends editing too.
 
+## Windows 98 style
+Settings › View › Style: **Windows 11** (default) or **Windows 98**, switched live. A reskin of the same layout,
+not Windows 98 Explorer's layout.
+- Colours from Windows 98's "Windows Standard" scheme: grey `#C0C0C0` face, 3D edges (raised buttons, sunken
+  lists and text boxes, etched separators), white lists, navy `#000080` selection with white text (grey when the
+  list isn't focused). Always light; the Theme and Accent settings are disabled while it's on.
+- MS Sans Serif (macOS ships its TrueType version) at 11 pt, Tahoma Bold for bold; tighter rows (18 pt Details).
+- The tab strip is the title bar's navy-to-blue gradient (greys when the window is inactive), with property-sheet
+  tabs standing on the face; "Window buttons on the right" gives 16 × 14 pt raised caption buttons. Command and
+  address bar buttons are flat toolbar buttons that rise under the mouse and sink when pressed. Details' column
+  headers are raised buttons. Icon views highlight only the name. Drive capacity bars are Windows 98 progress
+  bars (blocks). The status bar text sits in a sunken panel.
+- Not restyled: menus and context menus, dialogs (Properties, Settings, progress, conflicts, wizards), scroll
+  bars, and the icons (SF Symbols and macOS file icons).
+- `Theme.isClassic` is read from the defaults so colour providers can resolve it off the main actor; colours pick
+  the style when drawn, and views that cache fonts or sizes adopt `StyleObserving` (`Theme.restyle(_:)` walks
+  every tab's views after a switch). Checked with window snapshots in both styles, light and dark, switching
+  back and forth; the Windows 11 render is unchanged.
+
 ---
 
 ## Risks
