@@ -20,6 +20,16 @@ final class SpeedGraphView: NSView {
         didSet { if isPaused != oldValue { needsDisplay = true } }
     }
 
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .image }
+
+    override func accessibilityLabel() -> String? {
+        let percent = "\(Int((fraction * 100).rounded()))% complete"
+        if isPaused { return "\(percent), paused" }
+        return speedText.map { "\(percent), speed \($0)" } ?? percent
+    }
+
     func record(fraction: Double, speed: Double?) {
         self.fraction = fraction
         if let speed, fraction > (samples.last?.fraction ?? -1) {

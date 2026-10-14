@@ -21,8 +21,14 @@ public struct FileListContent: Sendable {
     public let rows: [Row]
     /// Every item in display order, including those in collapsed groups.
     public let allItems: [FileItem]
-    private let rowByURL: [URL: Int]
-    private let indexByURL: [URL: Row]
+    /// Where a shown item is: its Details row, and its section and index for the icon views.
+    private struct Position {
+        let row: Int
+        let section: Int
+        let index: Int
+    }
+
+    private let positionByURL: [URL: Position]
 
     public var isGrouped: Bool { sections.first?.group != nil }
 
@@ -56,21 +62,19 @@ public struct FileListContent: Sendable {
         self.allItems = allItems
 
         var rows: [Row] = []
-        var rowByURL: [URL: Int] = [:]
-        var indexByURL: [URL: Row] = [:]
+        var positionByURL: [URL: Position] = [:]
         rows.reserveCapacity(allItems.count + sections.count)
+        positionByURL.reserveCapacity(allItems.count)
         for (sectionIndex, section) in sections.enumerated() {
             if section.group != nil { rows.append(.header(section: sectionIndex)) }
             for (index, item) in section.items.enumerated() {
-                let key = item.url.standardizedFileURL
-                rowByURL[key] = rows.count
-                indexByURL[key] = .item(section: sectionIndex, index: index)
+                // Item URLs are already standardized.
+                positionByURL[item.url] = Position(row: rows.count, section: sectionIndex, index: index)
                 rows.append(.item(section: sectionIndex, index: index))
             }
         }
         self.rows = rows
-        self.rowByURL = rowByURL
-        self.indexByURL = indexByURL
+        self.positionByURL = positionByURL
     }
 
     /// The item on a Details-view row; `nil` for headers and out-of-range rows.
@@ -92,13 +96,17 @@ public struct FileListContent: Sendable {
 
     /// The Details-view row showing `url`; `nil` if absent or in a collapsed group.
     public func row(of url: URL) -> Int? {
-        rowByURL[url.standardizedFileURL]
+        lookUp(url)?.row
+    }
+
+    /// Standardizing touches the file system, so only when the URL isn't found as is.
+    private func lookUp(_ url: URL) -> Position? {
+        positionByURL[url] ?? positionByURL[url.standardizedFileURL]
     }
 
     /// Section and index of `url` in the icon views; `nil` if absent or collapsed.
     public func position(of url: URL) -> (section: Int, index: Int)? {
-        guard case .item(let section, let index) = indexByURL[url.standardizedFileURL] else { return nil }
-        return (section, index)
+        lookUp(url).map { ($0.section, $0.index) }
     }
 
     /// Rows of the items in `section` (for "click a group header to select its items").

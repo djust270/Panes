@@ -2,7 +2,7 @@ import AppKit
 import ExplorerCore
 
 /// Windows' "Map Network Drive": a drive letter, the folder (`\\server\share` or a URL), and
-/// "Reconnect when Explorer starts" / "Connect using different credentials".
+/// "Reconnect when \(AppInfo.name) starts" / "Connect using different credentials".
 @MainActor
 final class MapDriveDialog: NSObject, NSComboBoxDelegate {
     struct Choice {
@@ -18,7 +18,8 @@ final class MapDriveDialog: NSObject, NSComboBoxDelegate {
     private let folderBox = NSComboBox()
     private let problem = NSTextField(labelWithString: "")
     private var problemRow: NSGridRow?
-    private let reconnect = NSButton(checkboxWithTitle: "Reconnect when Explorer starts", target: nil, action: nil)
+    private let reconnect = NSButton(checkboxWithTitle: "Reconnect when \(AppInfo.name) starts",
+                                     target: nil, action: nil)
     private let credentials = NSButton(checkboxWithTitle: "Connect using different credentials",
                                        target: nil, action: nil)
 

@@ -61,7 +61,9 @@ enum SystemIntegration {
     /// Makes Explorer (or, turning it off, Finder) the default for folders and the file
     /// viewer. Returns an error message on failure.
     static func setDefaultFileBrowser(_ enabled: Bool) async -> String? {
-        guard let identifier = Bundle.main.bundleIdentifier else { return "Run Explorer from its app bundle first." }
+        guard let identifier = Bundle.main.bundleIdentifier else {
+            return "Run \(AppInfo.name) from its app bundle first."
+        }
         let finder = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
         let app = enabled ? Bundle.main.bundleURL : finder
         var global = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain) ?? [:]

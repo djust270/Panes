@@ -51,11 +51,12 @@ final class FileCollectionItem: NSCollectionViewItem {
         details: ItemDetailText,
         isCut: Bool
     ) {
-        fileURL = item.url.standardizedFileURL
+        fileURL = item.url
         itemView.viewMode = mode
         itemView.iconView.image = image
-        itemView.nameField.stringValue = item.name
+        itemView.nameField.stringValue = item.displayName(showingExtensions: AppSettings.showsFileExtensions)
         itemView.setDetails(details)
+        itemView.kindDescription = item.typeDescription
         itemView.alphaValue = isCut ? 0.45 : 1
         itemView.isSelected = isSelected
     }
@@ -105,8 +106,27 @@ final class FileItemView: NSView {
     var isHovered = false { didSet { stateChanged() } }
     var isDropTarget = false { didSet { stateChanged() } }
     var showsCheckbox = false { didSet { stateChanged() } }
+    /// "Folder", "JPEG image"…: what VoiceOver calls the item.
+    var kindDescription = ""
 
     override var isFlipped: Bool { true }
+
+    // VoiceOver reads an item as one element: "report, PDF document, 12/10/2026, 1.2 MB".
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityRoleDescription() -> String? { kindDescription }
+
+    override func accessibilityLabel() -> String? { nameField.stringValue }
+
+    override func accessibilityValue() -> Any? {
+        let details = [line2, line3, right1, right2].filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        return details.map(\.stringValue).joined(separator: ", ")
+    }
+
+    override func isAccessibilitySelected() -> Bool { isSelected }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -114,6 +134,7 @@ final class FileItemView: NSView {
         nameField.font = Theme.font(ofSize: 12)
         nameField.cell?.truncatesLastVisibleLine = true
         checkbox.isHidden = true
+        checkbox.setAccessibilityLabel("Select")
         capacityBar.isHidden = true
         for subview in [iconView, nameField, line2, line3, right1, right2, capacityBar, checkbox] {
             addSubview(subview)
@@ -263,6 +284,14 @@ final class CapacityBarView: NSView {
     private static let lowColor = NSColor(hex: 0xC42B1C)
 
     override var isFlipped: Bool { true }
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .levelIndicator }
+
+    override func accessibilityLabel() -> String? { "Used space" }
+
+    override func accessibilityValue() -> Any? { "\(Int((fraction * 100).rounded()))%" }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = bounds.height / 2

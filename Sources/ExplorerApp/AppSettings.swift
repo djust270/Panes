@@ -45,11 +45,17 @@ enum AppSettings {
         static let accent = "AccentColor"
         static let captionButtons = "WindowsCaptionButtons"
         static let hiddenFiles = "ShowHiddenFiles"
+        static let fileExtensions = "ShowFileExtensions"
         static let compactView = "CompactView"
         static let startLocation = "StartLocation"
         static let driveLetters = "ShowDriveLetters"
         static let dualPane = "DualPane"
+        static let crashReports = "OfferCrashReports"
+        static let classicContextMenu = "ClassicContextMenu"
     }
+
+    /// Read by the updater off the main thread.
+    nonisolated static let betaUpdatesKey = "BetaUpdates"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -81,6 +87,20 @@ enum AppSettings {
         set { set(newValue, for: Key.hiddenFiles) }
     }
 
+    /// Windows' View › Show › File name extensions. Off by default, as on Windows: known
+    /// extensions are hidden from names (and kept when renaming).
+    static var showsFileExtensions: Bool {
+        get { defaults.bool(forKey: Key.fileExtensions) }
+        set { set(newValue, for: Key.fileExtensions) }
+    }
+
+    /// The Windows 10-style right-click menu, every command at once, instead of Windows 11's
+    /// compact one with "Show more options". Off by default.
+    static var classicContextMenu: Bool {
+        get { defaults.bool(forKey: Key.classicContextMenu) }
+        set { set(newValue, for: Key.classicContextMenu) }
+    }
+
     /// Windows' View › Compact view: tighter rows in Details and the navigation pane.
     static var compactView: Bool {
         get { defaults.bool(forKey: Key.compactView) }
@@ -102,6 +122,18 @@ enum AppSettings {
     static var dualPane: Bool {
         get { defaults.bool(forKey: Key.dualPane) }
         set { set(newValue, for: Key.dualPane) }
+    }
+
+    /// Offer to report a crash on the next launch (on by default).
+    static var offersCrashReports: Bool {
+        get { defaults.object(forKey: Key.crashReports) as? Bool ?? true }
+        set { set(newValue, for: Key.crashReports) }
+    }
+
+    /// Updates from the beta channel as well as stable releases.
+    static var receivesBetaUpdates: Bool {
+        get { defaults.bool(forKey: betaUpdatesKey) }
+        set { set(newValue, for: betaUpdatesKey) }
     }
 
     private static func set(_ value: Any, for key: String) {

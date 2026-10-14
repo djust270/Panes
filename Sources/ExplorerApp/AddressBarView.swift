@@ -182,6 +182,12 @@ final class AddressBarView: NSView {
     }
 
     /// Switches the breadcrumb to an editable path (Ctrl+L, Alt+D, F4).
+    /// In Tab order: the navigation buttons (with Full Keyboard Access), address, search.
+    var keyViews: [NSView] { [backButton, forwardButton, upButton, refreshButton, breadcrumbBar, searchField] }
+
+    /// The search box, when searching is possible here.
+    var searchKeyView: NSView? { searchField.isEnabled ? searchField : nil }
+
     func beginEditing() {
         breadcrumbBar.beginEditing()
     }

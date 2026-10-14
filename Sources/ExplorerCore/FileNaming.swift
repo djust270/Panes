@@ -1,4 +1,5 @@
 import Foundation
+import os
 import UniformTypeIdentifiers
 
 /// Windows Explorer's naming rules for new, copied and conflicting items.
@@ -89,6 +90,31 @@ public enum FileNaming {
     public static func renameSelection(for name: String, hasExtension: Bool) -> NSRange {
         let (stem, _) = split(name, hasExtension: hasExtension)
         return NSRange(location: 0, length: (stem as NSString).length)
+    }
+
+    /// The extension Windows hides when View › Show › "File name extensions" is off: a file's
+    /// or package's extension, with the dot, when the system knows the type. Unknown
+    /// extensions ("notes.v2") stay visible, as on Windows; folders and dot-files have none.
+    public static func hiddenExtension(of name: String, isFolder: Bool) -> String? {
+        let ext = split(name, hasExtension: !isFolder).ext
+        guard ext.count > 1, isKnownExtension(String(ext.dropFirst()).lowercased()) else { return nil }
+        return ext
+    }
+
+    /// Asking LaunchServices takes tens of microseconds, and a folder has few extensions.
+    private static let knownExtensions = OSAllocatedUnfairLock<[String: Bool]>(initialState: [:])
+
+    private static func isKnownExtension(_ ext: String) -> Bool {
+        if let known = knownExtensions.withLock({ $0[ext] }) { return known }
+        let known = UTType(filenameExtension: ext).map { !$0.isDynamic } ?? false
+        knownExtensions.withLock { $0[ext] = known }
+        return known
+    }
+
+    /// `name` as shown with extensions hidden or not.
+    public static func displayName(_ name: String, isFolder: Bool, showingExtensions: Bool) -> String {
+        guard !showingExtensions, let ext = hiddenExtension(of: name, isFolder: isFolder) else { return name }
+        return String(name.dropLast(ext.count))
     }
 
     /// `isTaken` closure checking names in `directory` (without following symlinks, and

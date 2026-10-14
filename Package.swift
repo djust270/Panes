@@ -8,6 +8,9 @@ let package = Package(
         .library(name: "ExplorerCore", targets: ["ExplorerCore"]),
         .executable(name: "ExplorerApp", targets: ["ExplorerApp"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+    ],
     targets: [
         .target(
             name: "ExplorerCore",
@@ -15,7 +18,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "ExplorerApp",
-            dependencies: ["ExplorerCore"],
+            dependencies: [
+                "ExplorerCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             linkerSettings: [.linkedFramework("NetFS")]
         ),
         .testTarget(

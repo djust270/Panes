@@ -38,7 +38,7 @@ final class ThumbnailProvider {
     ) -> NSImage? {
         guard Self.canThumbnail(item) else { return nil }
         let key = Key(
-            url: item.url.standardizedFileURL,
+            url: item.url,
             modified: item.dateModified,
             size: Int(size),
             scale: max(1, Int(scale.rounded()))

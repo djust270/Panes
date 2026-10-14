@@ -80,6 +80,8 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .detailsPane: return [.init("p", [.option, .shift])]
         case .navigationPane: return []
         case .hiddenFiles: return [.init(".", [.control, .shift])]
+        case .nextPane: return [.init(.f6)]
+        case .previousPane: return [.init(.f6, .shift)]
         case .viewMode(let index): return (1...8).contains(index) ? [.init("\(index)", [.control, .shift])] : []
         }
     }
@@ -120,6 +122,8 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .detailsPane: return [.init("p", [.command, .option, .shift])]
         case .navigationPane: return [.init("s", [.command, .control])]
         case .hiddenFiles: return [.init(".", [.command, .shift])]
+        case .nextPane: return [.init(.f6)]
+        case .previousPane: return [.init(.f6, .shift)]
         case .viewMode(let index): return (1...8).contains(index) ? [.init("\(index)", cmd)] : []
         }
     }
@@ -136,6 +140,8 @@ public enum ExplorerCommand: Hashable, Sendable {
     case selectAll, selectNone, invertSelection
     case back, forward, up, refresh, focusAddressBar, search
     case previewPane, detailsPane, navigationPane, hiddenFiles
+    /// F6 / Shift+F6: move focus between the address bar, search box, navigation pane and file list.
+    case nextPane, previousPane
     /// Layout 1…8, in `ViewMode.allCases` order.
     case viewMode(Int)
 
@@ -145,7 +151,7 @@ public enum ExplorerCommand: Hashable, Sendable {
             .newFolder, .newTextDocument, .open, .properties, .cut, .copy, .paste, .undo, .redo, .copyAsPath,
             .rename, .delete, .deletePermanently, .selectAll, .selectNone, .invertSelection,
             .back, .forward, .up, .refresh, .focusAddressBar, .search,
-            .previewPane, .detailsPane, .navigationPane, .hiddenFiles,
+            .previewPane, .detailsPane, .navigationPane, .hiddenFiles, .nextPane, .previousPane,
         ] + (1...9).map(ExplorerCommand.selectTab) + (1...8).map(ExplorerCommand.viewMode)
     }
 }
@@ -155,13 +161,13 @@ public struct KeyShortcut: Hashable, Sendable, CustomStringConvertible {
     public enum Key: Hashable, Sendable {
         /// A printable character, lowercase.
         case character(String)
-        case f2, f3, f4, f5
+        case f2, f3, f4, f5, f6
         case leftArrow, rightArrow, upArrow, downArrow
         case backspace, forwardDelete, tab, returnKey
 
         public var isFunctionKey: Bool {
             switch self {
-            case .f2, .f3, .f4, .f5: return true
+            case .f2, .f3, .f4, .f5, .f6: return true
             default: return false
             }
         }
@@ -202,6 +208,7 @@ public struct KeyShortcut: Hashable, Sendable, CustomStringConvertible {
         case .f3: text += "F3"
         case .f4: text += "F4"
         case .f5: text += "F5"
+        case .f6: text += "F6"
         case .leftArrow: text += "←"
         case .rightArrow: text += "→"
         case .upArrow: text += "↑"

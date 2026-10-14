@@ -12,6 +12,8 @@ final class NavigationPaneViewController: NSViewController {
     weak var dropHandler: FileDropHandling?
 
     private let outlineView = NavigationOutlineView()
+    /// Where focus goes in this pane.
+    var keyView: NSView { outlineView }
     private let scrollView = NSScrollView()
     private var childrenCache: [String: [SidebarItem]] = [:]
     private var roots = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)

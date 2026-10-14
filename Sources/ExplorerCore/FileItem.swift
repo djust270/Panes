@@ -13,6 +13,9 @@ public struct FileItem: Sendable, Hashable, Identifiable {
         case symlink
     }
 
+    /// Standardized (`standardizedFileURL`), as folder listings, `load` and searches make
+    /// them, so views can use it as a key directly: standardizing costs ~10 µs, which adds
+    /// up to seconds over 100,000 items.
     public let url: URL
     public let name: String
     public let kind: Kind
@@ -34,6 +37,11 @@ public struct FileItem: Sendable, Hashable, Identifiable {
 
     /// True for anything the user can navigate *into*.
     public var isFolder: Bool { kind == .directory }
+
+    /// The name as shown in views: without a known extension unless `showingExtensions`.
+    public func displayName(showingExtensions: Bool) -> String {
+        FileNaming.displayName(name, isFolder: kind == .directory, showingExtensions: showingExtensions)
+    }
 
     /// File name extension, lowercased, or empty if none.
     public var pathExtension: String { url.pathExtension.lowercased() }

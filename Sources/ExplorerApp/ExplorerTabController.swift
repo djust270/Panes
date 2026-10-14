@@ -327,7 +327,7 @@ final class ExplorerTabController: NSViewController {
                 } catch is CancellationError {
                     // Superseded by a newer load.
                 } catch {
-                    self?.rootViewController.statusBar.text = error.localizedDescription
+                    self?.showLoadError(error)
                 }
             }
         case .home:
@@ -356,14 +356,37 @@ final class ExplorerTabController: NSViewController {
                 updateStatusBar()
             case .failure(is RecycleBin.AccessDenied):
                 content.showUnavailable(
-                    "Explorer needs Full Disk Access to show the Recycle Bin.\n"
-                        + "Turn it on in System Settings › Privacy & Security › Full Disk Access."
+                    "\(AppInfo.name) needs Full Disk Access to show the Recycle Bin.",
+                    action: Self.fullDiskAccessAction
                 )
                 rootViewController.statusBar.text = ""
             case .failure(let error):
                 rootViewController.statusBar.text = error.localizedDescription
             }
         }
+    }
+
+    private static let fullDiskAccessAction = (
+        title: "Set Up Full Disk Access…",
+        run: { FullDiskAccessWindowController.shared.show() }
+    )
+
+    /// Windows' "You don't currently have permission to access this folder", offering Full
+    /// Disk Access when that's what's missing. Other errors go to the status bar.
+    private func showLoadError(_ error: Error) {
+        guard FullDiskAccess.isPermissionDenial(error) else {
+            rootViewController.statusBar.text = error.localizedDescription
+            return
+        }
+        if FullDiskAccess.isPrivacyDenial(error), FullDiskAccess.status() != .granted {
+            content.showUnavailable(
+                "macOS protects this folder. Give \(AppInfo.name) Full Disk Access to open it.",
+                action: Self.fullDiskAccessAction
+            )
+        } else {
+            content.showUnavailable("You don’t currently have permission to access this folder.")
+        }
+        rootViewController.statusBar.text = ""
     }
 
     func updateStatusBar() {
@@ -413,11 +436,6 @@ final class ExplorerTabController: NSViewController {
         watchers.forEach { $0.stop() }
         watchTasks = []
         watchers = []
-    }
-
-    /// Puts keyboard focus in the file list (after the tab is shown).
-    func focusContent() {
-        view.window?.makeFirstResponder(content.activeView)
     }
 
     /// Stops loading and watching, for good. Called when the tab closes.

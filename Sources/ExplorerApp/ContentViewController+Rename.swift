@@ -5,13 +5,15 @@ import ExplorerCore
 struct RenameSession {
     let item: FileItem
     let field: NSTextField
+    /// The extension hidden from the name (File name extensions off), added back on commit.
+    let hiddenExtension: String
     /// The label's line breaking, restored afterwards.
     let lineBreakMode: NSLineBreakMode
 }
 
 /// Rename in place (F2): the item's name label becomes editable with the name, minus its
-/// extension, selected. Return, Tab or clicking elsewhere commits; Escape cancels. Works in
-/// every view mode.
+/// extension, selected; with extensions hidden, the extension isn't shown and is kept.
+/// Return, Tab or clicking elsewhere commits; Escape cancels. Works in every view mode.
 extension ContentViewController: NSTextFieldDelegate {
     var isRenaming: Bool { renaming != nil }
 
@@ -22,11 +24,16 @@ extension ContentViewController: NSTextFieldDelegate {
 
     func beginRenaming(_ url: URL) {
         finishRenaming(commit: true)
+        let url = url.standardizedFileURL
         guard mode == .folder,
-              let item = listContent.allItems.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+              let item = listContent.allItems.first(where: { $0.url == url }),
               let (field, container) = nameField(for: item) else { return }
 
-        renaming = RenameSession(item: item, field: field, lineBreakMode: field.lineBreakMode)
+        let hiddenExtension = AppSettings.showsFileExtensions
+            ? nil : FileNaming.hiddenExtension(of: item.name, isFolder: item.kind == .directory)
+        let shownName = String(item.name.dropLast(hiddenExtension?.count ?? 0))
+        renaming = RenameSession(item: item, field: field, hiddenExtension: hiddenExtension ?? "",
+                                 lineBreakMode: field.lineBreakMode)
         container.alphaValue = 1
         field.isEditable = true
         field.isSelectable = true
@@ -36,15 +43,16 @@ extension ContentViewController: NSTextFieldDelegate {
         field.backgroundColor = .textBackgroundColor
         if field.maximumNumberOfLines == 1 { field.lineBreakMode = .byClipping }
         field.delegate = self
+        field.stringValue = shownName
         view.window?.makeFirstResponder(field)
 
-        let hasExtension = item.kind != .directory
-        field.currentEditor()?.selectedRange = FileNaming.renameSelection(for: item.name, hasExtension: hasExtension)
+        let hasExtension = item.kind != .directory && hiddenExtension == nil
+        field.currentEditor()?.selectedRange = FileNaming.renameSelection(for: shownName, hasExtension: hasExtension)
     }
 
     /// Selects and reveals `item`, returning its name label and the view to un-dim.
     private func nameField(for item: FileItem) -> (NSTextField, NSView)? {
-        let url = item.url.standardizedFileURL
+        let url = item.url
         if isDetailsMode {
             guard let row = listContent.row(of: url), nameColumnIndex >= 0 else { return nil }
             setSelection([url], scroll: true)
@@ -65,7 +73,10 @@ extension ContentViewController: NSTextFieldDelegate {
     func finishRenaming(commit: Bool) {
         guard let session = renaming else { return }
         let field = session.field
-        let newName = field.currentEditor()?.string ?? field.stringValue
+        let typed = field.currentEditor()?.string ?? field.stringValue
+        // An empty name stays empty, so it's refused rather than becoming ".txt".
+        let isBlank = typed.trimmingCharacters(in: .whitespaces).isEmpty
+        let newName = isBlank ? typed : typed + session.hiddenExtension
         renaming = nil
 
         if view.window?.firstResponder === field.currentEditor() {
@@ -77,7 +88,7 @@ extension ContentViewController: NSTextFieldDelegate {
         field.drawsBackground = false
         field.lineBreakMode = session.lineBreakMode
         field.delegate = nil
-        field.stringValue = session.item.name
+        field.stringValue = session.item.displayName(showingExtensions: session.hiddenExtension.isEmpty)
 
         if commit, newName != session.item.name {
             onRename?(session.item, newName)

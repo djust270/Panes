@@ -2,7 +2,9 @@ import AppKit
 import ExplorerCore
 
 /// Right-click menus, laid out like Windows 11's: a row of icons for Cut, Copy, Rename, Share
-/// and Delete, then the main commands, with the rest under "Show more options". Right-clicking
+/// and Delete, then the main commands, with the rest under "Show more options". The classic
+/// (Windows 10) menu lists everything at once: Settings › "Classic context menu", or hold
+/// Shift while right-clicking, as on Windows 11. Right-clicking
 /// an unselected item selects it, and right-clicking the background clears the selection, as
 /// in Windows. Actions travel up the responder chain to the tab, which also validates them.
 /// The Details header has its own menu: Size column to fit, and the column chooser.
@@ -38,8 +40,8 @@ extension ContentViewController: NSMenuDelegate {
             }
         }
         if let clicked {
-            if !selectedURLs.contains(clicked.url.standardizedFileURL) {
-                setSelection([clicked.url.standardizedFileURL], scroll: false)
+            if !selectedURLs.contains(clicked.url) {
+                setSelection([clicked.url], scroll: false)
             }
         } else {
             selectNone()
@@ -56,7 +58,12 @@ extension ContentViewController: NSMenuDelegate {
 
         switch (mode, onItem) {
         case (.folder, true), (.search, true), (.home, true):
-            addFolderItemCommands(to: menu, hasFolders: hasFolders, files: selection.filter { !$0.isFolder })
+            let files = selection.filter { !$0.isFolder }
+            if AppSettings.classicContextMenu || NSEvent.modifierFlags.contains(.shift) {
+                addClassicItemCommands(to: menu, hasFolders: hasFolders, files: files)
+            } else {
+                addFolderItemCommands(to: menu, hasFolders: hasFolders, files: files)
+            }
         case (.search, false):
             addViewItems(to: menu)
             menu.items.last.map(menu.removeItem)
@@ -129,6 +136,36 @@ extension ContentViewController: NSMenuDelegate {
             .init(symbol: "trash", title: "Delete", action: #selector(ExplorerTabController.delete(_:))),
         ], from: activeView))
         menu.addItem(.separator())
+        addOpenCommands(to: menu, hasFolders: hasFolders, files: files)
+        menu.addItem(.separator())
+        addQuickAccessItems(to: menu)
+        if mode == .folder {
+            menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        }
+        menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+        menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
+        menu.addItem(.separator())
+        menu.addItem(moreOptionsItem())
+    }
+
+    /// Windows 10's item menu: the open commands, Quick access, Share and Compress, Send to,
+    /// Cut / Copy, Delete / Rename, Copy as path, Properties.
+    private func addClassicItemCommands(to menu: NSMenu, hasFolders: Bool, files: [FileItem]) {
+        addOpenCommands(to: menu, hasFolders: hasFolders, files: files)
+        menu.addItem(.separator())
+        addQuickAccessItems(to: menu)
+        menu.add("Share", #selector(ExplorerTabController.shareSelection(_:)), modifiers: [])
+        if mode == .folder {
+            menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
+        }
+        menu.addItem(.separator())
+        addClassicCommands(to: menu, includingCopyAsPath: true)
+        menu.addItem(.separator())
+        menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
+    }
+
+    /// Open, Open in new tab / window, Open with, Open file location, Extract All, Open in Terminal.
+    private func addOpenCommands(to menu: NSMenu, hasFolders: Bool, files: [FileItem]) {
         menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open)
         if hasFolders {
             menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
@@ -149,15 +186,6 @@ extension ContentViewController: NSMenuDelegate {
                 menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
             }
         }
-        menu.addItem(.separator())
-        addQuickAccessItems(to: menu)
-        if mode == .folder {
-            menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
-        }
-        menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
-        menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
-        menu.addItem(.separator())
-        menu.addItem(moreOptionsItem())
     }
 
     /// Where to anchor a popover for the selection (e.g. the share sheet), in `activeView`.
@@ -247,26 +275,35 @@ extension ContentViewController: NSMenuDelegate {
     /// "Show more options ▸": the classic commands, including Send to.
     private func moreOptionsItem() -> NSMenuItem {
         let submenu = NSMenu(title: "Show more options")
-        submenu.addItem(sendToItem())
-        submenu.addItem(.separator())
-        submenu.add("Cut", #selector(NSText.cut(_:)), command: .cut)
-        submenu.add("Copy", #selector(NSText.copy(_:)), command: .copy)
-        submenu.addItem(.separator())
-        submenu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
-        submenu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename)
-        if AppSettings.dualPane {
-            submenu.addItem(.separator())
-            submenu.add("Copy to other pane", #selector(ExplorerTabController.copyToOtherPane(_:)), modifiers: [])
-            submenu.add("Move to other pane", #selector(ExplorerTabController.moveToOtherPane(_:)), modifiers: [])
-        }
-        if let tab = dropHandler as? ExplorerTabController, tab.canCopyAsWindowsPath {
-            submenu.addItem(.separator())
-            submenu.add("Copy as Windows path", #selector(ExplorerTabController.copyAsWindowsPath(_:)), modifiers: [])
-        }
+        addClassicCommands(to: submenu, includingCopyAsPath: false)
         let item = NSMenuItem(title: "Show more options", action: nil, keyEquivalent: "")
         item.image = NSImage(systemSymbolName: "ellipsis.rectangle", accessibilityDescription: nil)
         item.submenu = submenu
         return item
+    }
+
+    /// Send to, Cut / Copy, Delete / Rename, the other pane, and Copy as (Windows) path.
+    private func addClassicCommands(to menu: NSMenu, includingCopyAsPath: Bool) {
+        menu.addItem(sendToItem())
+        menu.addItem(.separator())
+        menu.add("Cut", #selector(NSText.cut(_:)), command: .cut)
+        menu.add("Copy", #selector(NSText.copy(_:)), command: .copy)
+        menu.addItem(.separator())
+        menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
+        menu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename)
+        if AppSettings.dualPane {
+            menu.addItem(.separator())
+            menu.add("Copy to other pane", #selector(ExplorerTabController.copyToOtherPane(_:)), modifiers: [])
+            menu.add("Move to other pane", #selector(ExplorerTabController.moveToOtherPane(_:)), modifiers: [])
+        }
+        let windowsPath = (dropHandler as? ExplorerTabController)?.canCopyAsWindowsPath == true
+        if includingCopyAsPath || windowsPath { menu.addItem(.separator()) }
+        if includingCopyAsPath {
+            menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+        }
+        if windowsPath {
+            menu.add("Copy as Windows path", #selector(ExplorerTabController.copyAsWindowsPath(_:)), modifiers: [])
+        }
     }
 
     /// "Send to ▸ Desktop, Documents, Downloads, Mail recipient, <removable drives>": copies there.

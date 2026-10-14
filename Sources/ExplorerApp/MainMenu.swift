@@ -18,20 +18,26 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         let help = NSMenu(title: "Help")
+        help.addItem(withTitle: "Full Disk Access…", action: #selector(AppDelegate.showFullDiskAccess(_:)),
+                     keyEquivalent: "")
+        help.addItem(withTitle: "Report a Problem…", action: #selector(AppDelegate.reportProblem(_:)),
+                     keyEquivalent: "")
         mainMenu.addItem(submenu: help)
         NSApp.helpMenu = help
 
         return mainMenu
     }
 
-    private static var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? ProcessInfo.processInfo.processName
-    }
+    private static var appName: String { AppInfo.name }
 
     private static func appMenu() -> NSMenu {
         let menu = NSMenu(title: appName)
         menu.addItem(withTitle: "About \(appName)",
                      action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        if Updater.shared.isAvailable {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)),
+                         keyEquivalent: "")
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         menu.addItem(.separator())
@@ -142,6 +148,7 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.add("Compact View", #selector(AppDelegate.toggleCompactView(_:)), modifiers: [])
         menu.add("Item Check Boxes", #selector(ExplorerTabController.toggleItemCheckboxes(_:)), modifiers: [])
+        menu.add("File Name Extensions", #selector(AppDelegate.toggleFileExtensions(_:)), modifiers: [])
         menu.add("Hidden Items", #selector(AppDelegate.toggleHiddenFiles(_:)), command: .hiddenFiles,
                  alternates: true)
         menu.addItem(.separator())
@@ -166,6 +173,10 @@ enum MainMenu {
         menu.add("Edit Address", #selector(ExplorerTabController.editAddress(_:)), command: .focusAddressBar,
                  alternates: true)
         menu.add("Search", #selector(ExplorerTabController.focusSearch(_:)), command: .search, alternates: true)
+        menu.add("Focus Next Area", #selector(ExplorerTabController.focusNextPane(_:)), command: .nextPane,
+                 alternates: true)
+        menu.add("Focus Previous Area", #selector(ExplorerTabController.focusPreviousPane(_:)), command: .previousPane,
+                 alternates: true)
         menu.add("Switch to Other Pane", #selector(ExplorerTabController.switchPane(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Home", #selector(ExplorerTabController.goHome(_:)), modifiers: [])

@@ -1,4 +1,4 @@
-# Explorer for macOS — Phased Plan
+# Panes — Phased Plan
 
 Goal: a native macOS file manager that mimics the look and behaviour of the Windows 11 File Explorer.
 
@@ -254,12 +254,65 @@ as the default file viewer, Bonjour discovery (no server here advertises SMB), a
   non-APFS volumes aren't asked for purgeable space (CacheDelete errors in the log).
 
 ## Phase 7 — Polish & release (~2 weeks)
-- Performance profiling (100k+ item folders, network shares, slow external drives)
-- Accessibility (VoiceOver labels, full keyboard navigation)
-- First-run onboarding for Full Disk Access (with clear explanation)
-- Settings: keyboard scheme, theme, show extensions, show hidden files, launch at login
-- Sparkle auto-updates, DMG packaging, notarization
-- Crash reporting, beta channel
+- [x] Performance profiling (100k+ item folders, network shares, slow external drives)
+- [x] Accessibility (VoiceOver labels, full keyboard navigation)
+- [x] First-run onboarding for Full Disk Access (with clear explanation)
+- [x] Settings: keyboard scheme, theme, show extensions, show hidden files, launch at login
+- [x] Sparkle auto-updates, DMG packaging, notarization (scripts; no Developer ID on this Mac yet)
+- [x] Crash reporting, beta channel
+
+**Status: implemented, not yet checked by hand.** Driven by a temporary in-app self-test (100k-file folder timings,
+browsing an SMB share read-only, hidden extensions and rename, Tab / F6 focus order with real key events, VoiceOver
+attributes, onboarding and Settings snapshots in light and dark), plus a dry-run release (ad-hoc signed DMG, appcast
+item whose EdDSA signature verifies against the app's public key, bundled app launching with Sparkle).
+Not exercised: notarization (needs a Developer ID certificate and a notarytool profile), an actual Sparkle update
+(needs a published appcast; the repository is private, so the feed URL isn't reachable yet), launch at login and
+the crash prompt (bundled builds only), and VoiceOver itself.
+- Performance (100,000 files, release build): opening the folder blocks the main thread for ~55 ms (was ~3 s); a
+  live refresh ~70 ms (was ~16 s). Sort by name 0.8 s, by type 0.9 s (was 55 s), select all 0.25 s (was 3 s),
+  type-ahead 20 ms. Fixes: sort keys computed once per item instead of per comparison (type names came from
+  LaunchServices on every comparison), cached type names and "known extension" lookups, item URLs standardized
+  once per folder rather than per item (`standardizedFileURL` touches the file system, ~10 µs each), a cached
+  selection for menu validation, and listings of 5,000+ items sorted and grouped off the main thread (also when
+  only the sort order changes; layout and grouping changes still rebuild at once, ~0.6–0.8 s at 100k). Memory
+  returns to baseline after leaving a big folder. `ListPerformanceTests` (opt-in) guards the sort costs.
+  An SMB share (650 items) browses without file-system work on the main thread worth mentioning; scrolling is
+  bounded by AppKit layout. Per-file icons are still read from the volume (no type-only icons for slow drives).
+- Settings is now three tabs: General (keyboard scheme, start location, start at sign-in via `SMAppService`,
+  default file browser), View (theme, accent, caption buttons, compact view, file name extensions, hidden items,
+  drive letters) and Privacy & Updates (Full Disk Access status, automatic checks / downloads, beta updates,
+  crash reports).
+- File name extensions (View › Show, ⋯, Settings): off by default, as on Windows. Known extensions are hidden from
+  names everywhere (lists, Details pane, type-ahead); unknown ones ("notes.v2") stay. Renaming edits the name
+  without the extension and keeps it; an empty name is refused rather than becoming ".txt".
+- Full Disk Access: shown once at first launch when access is off (`FullDiskAccess` probes TCC-protected files;
+  no API exists), and from Help, Settings and a "Set Up Full Disk Access…" button wherever macOS refuses a folder
+  (EPERM; plain EACCES shows Windows' "You don't currently have permission to access this folder"). Opens the
+  Privacy pane, offers the app icon to drag into the list, and notices when access is turned on.
+- Accessibility: icon/tile items are single VoiceOver elements (name, type as role, details as value, selected
+  state), capacity bars and the Properties ring are level indicators, the speed graph reads progress and speed,
+  check boxes and breadcrumb chevrons are labelled. Tab / Shift+Tab and F6 / Shift+F6 (Go menu) move between the
+  address bar (which switches to the editable path), search box, navigation pane and file list; command bar and
+  status bar buttons join the Tab loop with Full Keyboard Access. The address bar returns to breadcrumbs whenever
+  focus leaves it.
+- Updates: Sparkle 2.10 (SwiftPM; `bundle.sh` embeds and signs the framework). The EdDSA private key is in the
+  login keychain (back it up: `generate_keys -x file`); the public key is `scripts/sparkle-public-key.txt`. Feed:
+  `appcast.xml` on the main branch (`SU_FEED_URL` to change), DMGs as GitHub release assets. Betas are items on the
+  "beta" channel (versions containing "beta"), offered with Settings › "Get beta updates". App › Check for
+  Updates…. `scripts/release.sh` runs bundle → notarize → DMG → notarize → sign → appcast, and with `PUBLISH=1`
+  creates the GitHub release and pushes the appcast.
+- Crash reports: no SDK or server. At launch, a new macOS crash report for Explorer (`~/Library/Logs/
+  DiagnosticReports`) prompts "Report…", which opens a prefilled GitHub issue (versions, exception, crashed
+  thread; no paths) for the user to review. Help › Report a Problem… opens a blank issue with versions filled in.
+- Bundle ID is now `co.justgeeks.explorer` (settings of earlier ad-hoc bundles stay under the old ID). The app is
+  named **Panes** (`APP_NAME`; UI text uses `AppInfo.name`; "OSX Explorer" was dropped: OS X is Apple's
+  trademark); DMGs are `Panes-<version>.dmg` (`dmg.sh` turns spaces into hyphens, which GitHub would otherwise
+  rename).
+- Settings › View › "Classic context menu (Windows 10 style)": every item command at once (open commands, Quick
+  access, Share, Compress, Send to, Cut / Copy, Delete / Rename, Copy as path, Properties) instead of the icon row
+  and "Show more options". Shift+right-click shows it either way, as on Windows 11. Background menus are the same
+  in both styles.
+- Fixed on the way: Tab in the address bar left it editing; clicking elsewhere now ends editing too.
 
 ---
 

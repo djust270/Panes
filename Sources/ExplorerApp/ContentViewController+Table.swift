@@ -185,7 +185,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     // swiftlint:disable:next cyclomatic_complexity
     func text(for column: FileColumn, item: FileItem) -> String {
         switch column {
-        case .name: return item.name
+        case .name: return item.displayName(showingExtensions: AppSettings.showsFileExtensions)
         case .originalLocation: return item.originalFolderPath
         case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
         case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""
@@ -250,7 +250,11 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
 
 /// The Name cell: optional checkbox, icon, name.
 final class NameCellView: NSTableCellView {
-    let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    let checkbox: NSButton = {
+        let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+        checkbox.setAccessibilityLabel("Select")
+        return checkbox
+    }()
     var onToggle: (() -> Void)?
 
     var showsCheckbox = false {

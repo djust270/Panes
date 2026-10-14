@@ -1,4 +1,4 @@
-# Explorer for macOS
+# Panes
 
 A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.md](PLAN.md) for the roadmap.
 
@@ -16,8 +16,11 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 | Test | `scripts/test.sh` |
 | Test incl. 100k-file perf check | `EXPLORER_PERF_TESTS=1 scripts/test.sh` |
 | Test incl. cross-volume ops on an exFAT disk image | `EXPLORER_VOLUME_TESTS=1 scripts/test.sh` |
-| Build `build/Explorer.app` | `scripts/bundle.sh` |
+| Build `build/Panes.app` | `scripts/bundle.sh` |
 | Signed + notarized build | `SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh && scripts/notarize.sh` |
+| DMG from `build/Panes.app` | `VERSION=0.2.0 scripts/dmg.sh` |
+| Release (app + DMG notarized, Sparkle-signed, appcast item) | `SIGN_IDENTITY=… scripts/release.sh 0.2.0 7`; `DRY_RUN=1` to try it unsigned, `PUBLISH=1` to create the GitHub release and push `appcast.xml` |
+| Sort/group timings at 100k items | `EXPLORER_PERF_TESTS=1 scripts/test.sh --filter ListPerformance` |
 
 To work in Xcode, open `Package.swift`.
 
@@ -37,4 +40,13 @@ To work in Xcode, open `Package.swift`.
   preferences; `MainMenu` takes every shortcut from the keyboard scheme. `PropertiesWindowController` (General,
   Security, Details tabs), `ExtractWizard`, `MapDriveDialog`, `DriveCenter` (volumes, letters, Eject),
   `NetworkBrowser` (Bonjour) and `SystemIntegration` (folder handler, Services, default file viewer).
+- Phase 7: `FullDiskAccess` and `CrashReport` (ExplorerCore); `FullDiskAccessWindowController`, `LaunchAtLogin`,
+  `Updater` (Sparkle), `CrashReporter` and `AppInfo` (ExplorerApp).
 - `Tests/ExplorerCoreTests` — Swift Testing suites.
+
+## Releases
+Updates are delivered with [Sparkle](https://sparkle-project.org): `appcast.xml` on the main branch lists releases,
+and the DMGs are GitHub release assets. Versions containing "beta" go to the beta channel. The EdDSA signing key
+lives in the release machine's login keychain; keep an exported copy somewhere safe
+(`.build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle-private-key`), since losing it means existing
+installs can't verify new updates. If SwiftPM hangs resolving packages, pass `--disable-keychain`.

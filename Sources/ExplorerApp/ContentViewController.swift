@@ -84,7 +84,21 @@ final class ContentViewController: NSViewController {
     /// The current folder's contents, unsorted, as last supplied by `setItems`.
     private(set) var items: [FileItem] = []
     /// What the views show.
-    private(set) var listContent = FileListContent()
+    private(set) var listContent = FileListContent() {
+        didSet { listGeneration &+= 1 }
+    }
+    /// Changes with `listContent`, so cached lookups know they're stale.
+    private var listGeneration = 0
+    /// `selectedItems` for a selection snapshot: menu and command-bar validation asks for it
+    /// many times per change, and building it for 100,000 selected items takes a while.
+    private var selectionCache: SelectionSnapshot?
+
+    private struct SelectionSnapshot {
+        let generation: Int
+        let rows: IndexSet
+        let paths: Set<IndexPath>
+        let items: [FileItem]
+    }
     /// Every item in display order, including those in collapsed groups.
     var allItems: [FileItem] { listContent.allItems }
     /// Group IDs the user collapsed; forgotten on navigation.
@@ -102,21 +116,29 @@ final class ContentViewController: NSViewController {
 
     /// Items currently selected, in display order.
     var selectedItems: [FileItem] {
-        if isDetailsMode {
-            return tableView.selectedRowIndexes.compactMap { listContent.item(atRow: $0) }
+        let rows = isDetailsMode ? tableView.selectedRowIndexes : IndexSet()
+        let paths = isDetailsMode ? [] : collectionView.selectionIndexPaths
+        if let cache = selectionCache, cache.generation == listGeneration, cache.rows == rows, cache.paths == paths {
+            return cache.items
         }
-        return collectionView.selectionIndexPaths.sorted().compactMap {
-            listContent.item(section: $0.section, index: $0.item)
-        }
+        let items = isDetailsMode
+            ? rows.compactMap { listContent.item(atRow: $0) }
+            : paths.sorted().compactMap { listContent.item(section: $0.section, index: $0.item) }
+        selectionCache = SelectionSnapshot(generation: listGeneration, rows: rows, paths: paths, items: items)
+        return items
     }
 
-    var selectedURLs: Set<URL> { Set(selectedItems.map(\.url.standardizedFileURL)) }
+    var selectedURLs: Set<URL> { Set(selectedItems.map(\.url)) }
 
     let tableView = FileTableView()
     let collectionView = FileCollectionView()
     private let tableScrollView = NSScrollView()
     private let collectionScrollView = NSScrollView()
-    private let unavailableLabel = NSTextField(labelWithString: "")
+    /// Shown in place of the list when a location can't be listed: a message and an optional button.
+    private let unavailableView = NSStackView()
+    private let unavailableLabel = NSTextField(wrappingLabelWithString: "")
+    private let unavailableButton = NSButton(title: "", target: nil, action: nil)
+    private var unavailableAction: (() -> Void)?
     let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -137,6 +159,12 @@ final class ContentViewController: NSViewController {
     /// reloaded). It must be reloaded before its layout changes, or AppKit asks the new layout
     /// about index paths that no longer exist and throws.
     private var collectionNeedsReload = false
+
+    /// Listings at least this long are sorted and grouped off the main thread when they
+    /// arrive, so opening (or live-refreshing) a huge folder doesn't freeze the window.
+    private static let backgroundBuildThreshold = 5_000
+    /// Builds `listContent` for the latest `setItems`; any synchronous rebuild cancels it.
+    private var buildTask: Task<Void, Never>?
 
     private var propertiesCache: [URL: (modified: Date?, properties: FileProperties)] = [:]
     private var propertiesTask: Task<Void, Never>?
@@ -165,13 +193,21 @@ final class ContentViewController: NSViewController {
 
         unavailableLabel.textColor = .secondaryLabelColor
         unavailableLabel.alignment = .center
-        unavailableLabel.isHidden = true
-        unavailableLabel.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(unavailableLabel)
+        unavailableLabel.preferredMaxLayoutWidth = 420
+        unavailableButton.bezelStyle = .rounded
+        unavailableButton.target = self
+        unavailableButton.action = #selector(unavailableButtonClicked)
+        unavailableView.orientation = .vertical
+        unavailableView.spacing = 12
+        unavailableView.addArrangedSubview(unavailableLabel)
+        unavailableView.addArrangedSubview(unavailableButton)
+        unavailableView.isHidden = true
+        unavailableView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(unavailableView)
         NSLayoutConstraint.activate([
-            unavailableLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            unavailableLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            unavailableLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 16),
+            unavailableView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            unavailableView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            unavailableView.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 16),
         ])
 
         view = container
@@ -183,6 +219,7 @@ final class ContentViewController: NSViewController {
     /// Prepares for a new location: its kind and remembered view. Items follow via `setItems`.
     func show(mode: Mode, settings: FolderViewSettings) {
         finishRenaming(commit: true)
+        buildTask?.cancel()
         self.mode = mode
         collapsedGroups = []
         kindFilter = []
@@ -210,6 +247,7 @@ final class ContentViewController: NSViewController {
     private func applySettings(_ newSettings: FolderViewSettings, notify: Bool) {
         let selection = selectedURLs
         let hadFocus = view.window?.firstResponder === activeView
+        let previous = settings
         settings = newSettings.sanitized(for: listKind)
 
         isApplyingSettings = true
@@ -230,11 +268,22 @@ final class ContentViewController: NSViewController {
         }
         isApplyingSettings = false
 
-        if unavailableLabel.isHidden {
+        if unavailableView.isHidden {
             tableScrollView.isHidden = !isDetailsMode
             collectionScrollView.isHidden = isDetailsMode
         }
-        rebuild(selecting: selection, scroll: true)
+        // Re-sorting a huge folder happens in the background, the old order showing meanwhile.
+        // Other changes rebuild at once: the collection view's layout must match its data.
+        var sortOnly = previous
+        sortOnly.sort = settings.sort
+        if sortOnly == settings, previous.sort != settings.sort, canBuildInBackground {
+            buildInBackground { [weak self] content in
+                guard let self else { return }
+                show(content, selecting: selectedURLs, scroll: true)
+            }
+        } else {
+            rebuild(selecting: selection, scroll: true)
+        }
         if hadFocus { view.window?.makeFirstResponder(activeView) }
         if notify { onSettingsChange?(settings) }
     }
@@ -250,23 +299,64 @@ final class ContentViewController: NSViewController {
             deferredItems = newItems
             return
         }
-        unavailableLabel.isHidden = true
+        unavailableView.isHidden = true
         tableScrollView.isHidden = !isDetailsMode
         collectionScrollView.isHidden = isDetailsMode
 
+        items = newItems
+        guard canBuildInBackground else {
+            buildTask?.cancel()
+            itemsDidArrive(prepared: nil)
+            return
+        }
+        buildInBackground { [weak self] content in
+            self?.itemsDidArrive(prepared: content)
+            // The tab updated its status bar for the old list when the items arrived.
+            self?.onSelectionChange?()
+        }
+    }
+
+    private var canBuildInBackground: Bool {
+        items.count >= Self.backgroundBuildThreshold && (mode == .folder || mode == .recycleBin)
+            && !settings.needsProperties
+    }
+
+    /// Sorts and groups `items` off the main thread, then hands the result to `finish`,
+    /// unless something rebuilt the list in the meantime.
+    private func buildInBackground(then finish: @escaping (FileListContent) -> Void) {
+        buildTask?.cancel()
+        let (shown, sort, grouping, collapsed) = (kindFilter.filter(items), settings.sort, settings.grouping,
+                                                  collapsedGroups)
+        buildTask = Task {
+            let content = await Task.detached(priority: .userInitiated) {
+                FileListContent(items: shown, sort: sort, grouping: grouping, collapsedGroups: collapsed)
+            }.value
+            guard !Task.isCancelled else { return }
+            finish(content)
+        }
+    }
+
+    /// Shows the new `items`, keeping the selection by URL (or selecting what was asked for),
+    /// from `prepared` content when it was built in the background.
+    private func itemsDidArrive(prepared: FileListContent?) {
+        var prepared = prepared
         var selection = selectedURLs
         var scroll = false
-        items = newItems
         if let pending = pendingSelection {
-            let present = Set(pending).intersection(newItems.map(\.url.standardizedFileURL))
+            let present = Set(pending).intersection(items.map(\.url))
             if !present.isEmpty {
-                revealGroups(containing: present)
+                // Expanding a group means building again.
+                if revealGroups(containing: present, in: prepared ?? listContent) { prepared = nil }
                 selection = present
                 scroll = true
                 pendingSelection = nil
             }
         }
-        rebuild(selecting: selection, scroll: scroll)
+        if let prepared {
+            show(prepared, selecting: selection, scroll: scroll)
+        } else {
+            rebuild(selecting: selection, scroll: scroll)
+        }
 
         if let rename = pendingRename, listContent.row(of: rename) != nil {
             pendingRename = nil
@@ -277,7 +367,7 @@ final class ContentViewController: NSViewController {
     /// Selects `urls` (now, or once they appear after a reload) and optionally starts renaming one.
     func select(_ urls: [URL], renaming renameURL: URL? = nil) {
         let wanted = Set(urls.map(\.standardizedFileURL))
-        let loaded = Set(items.map(\.url.standardizedFileURL))
+        let loaded = Set(items.map(\.url))
         if !wanted.isEmpty, wanted.isSubset(of: loaded) {
             if revealGroups(containing: wanted) { rebuild(selecting: wanted, scroll: true) }
             setSelection(wanted, scroll: true)
@@ -289,31 +379,47 @@ final class ContentViewController: NSViewController {
     }
 
     /// Shows a centered message instead of the items, for locations with nothing to list.
-    func showUnavailable(_ message: String) {
+    /// Replaces the list with `message`, and a button running `action` if given.
+    func showUnavailable(_ message: String, action: (title: String, run: () -> Void)? = nil) {
         finishRenaming(commit: false)
         items = []
         rebuild(selecting: [], scroll: false)
         unavailableLabel.stringValue = message
-        unavailableLabel.isHidden = false
+        unavailableButton.title = action?.title ?? ""
+        unavailableButton.isHidden = action == nil
+        unavailableAction = action?.run
+        unavailableView.isHidden = false
         tableScrollView.isHidden = true
         collectionScrollView.isHidden = true
     }
 
+    @objc private func unavailableButtonClicked() {
+        unavailableAction?()
+    }
+
     /// Rebuilds `listContent` from `items` and reloads the active view.
     func rebuild(selecting selection: Set<URL>, scroll: Bool) {
+        buildTask?.cancel()
+        let content: FileListContent
         if mode == .home {
-            listContent = FileListContent(groups: homeGroups, collapsedGroups: collapsedGroups)
+            content = FileListContent(groups: homeGroups, collapsedGroups: collapsedGroups)
         } else if mode == .volumes {
-            listContent = FileListContent(groups: driveGroups(), collapsedGroups: collapsedGroups)
+            content = FileListContent(groups: driveGroups(), collapsedGroups: collapsedGroups)
         } else {
             let shown = kindFilter.filter(settings.needsProperties ? itemsWithProperties() : items)
-            listContent = FileListContent(
+            content = FileListContent(
                 items: shown,
                 sort: settings.sort,
                 grouping: settings.grouping,
                 collapsedGroups: collapsedGroups
             )
         }
+        show(content, selecting: selection, scroll: scroll)
+    }
+
+    /// Makes `content` the list and reloads the active view.
+    private func show(_ content: FileListContent, selecting selection: Set<URL>, scroll: Bool) {
+        listContent = content
         if isDetailsMode {
             tableView.reloadData()
             collectionNeedsReload = true
@@ -335,33 +441,13 @@ final class ContentViewController: NSViewController {
 
     /// Expands collapsed groups holding any of `urls`. Returns whether any were expanded.
     @discardableResult
-    private func revealGroups(containing urls: Set<URL>) -> Bool {
-        let hidden = listContent.sections.filter { section in
-            section.isCollapsed && section.group?.items.contains { urls.contains($0.url.standardizedFileURL) } == true
+    private func revealGroups(containing urls: Set<URL>, in content: FileListContent? = nil) -> Bool {
+        let hidden = (content ?? listContent).sections.filter { section in
+            section.isCollapsed && section.group?.items.contains { urls.contains($0.url) } == true
         }
         let ids = hidden.compactMap(\.group?.id)
         collapsedGroups.subtract(ids)
         return !ids.isEmpty
-    }
-
-    func toggleGroup(_ id: String) {
-        finishRenaming(commit: true)
-        if collapsedGroups.contains(id) {
-            collapsedGroups.remove(id)
-        } else {
-            collapsedGroups.insert(id)
-        }
-        rebuild(selecting: selectedURLs, scroll: false)
-    }
-
-    func selectGroup(_ id: String) {
-        guard let group = listContent.sections.first(where: { $0.group?.id == id })?.group else { return }
-        if collapsedGroups.contains(id) {
-            collapsedGroups.remove(id)
-            rebuild(selecting: [], scroll: false)
-        }
-        setSelection(Set(group.items.map(\.url.standardizedFileURL)), scroll: false)
-        view.window?.makeFirstResponder(activeView)
     }
 
     // MARK: Selection
@@ -390,49 +476,6 @@ final class ContentViewController: NSViewController {
         onSelectionChange?()
     }
 
-    // MARK: Activation
-
-    @objc func activateSelection() {
-        let selected = selectedItems
-        guard !selected.isEmpty, mode != .recycleBin else { return }
-        if mode == .network {
-            if let computer = selected.first { onConnect?(computer.url) }
-            return
-        }
-        if selected.count == 1, let only = selected.first, only.isFolder {
-            onNavigate?(.folder(only.url))
-            return
-        }
-        let files = selected.filter { !$0.isFolder }.map(\.url)
-        for file in files {
-            NSWorkspace.shared.open(file)
-        }
-        // Apps and other packages aren't "recent files".
-        QuickAccess.recordOpen(of: selected.filter { $0.kind == .file }.map(\.url))
-    }
-
-    /// Type-ahead: selects the next item whose name starts with what's been typed. Returns
-    /// `false` if the key should be handled normally (a space with nothing typed yet).
-    func typeAhead(_ text: String) -> Bool {
-        let now = Date()
-        if text == " ", typeAhead.currentPrefix(at: now) == nil { return false }
-        let visible = listContent.sections.flatMap(\.items)
-        let selected = selectedURLs
-        let current = visible.firstIndex { selected.contains($0.url.standardizedFileURL) }
-        if let index = typeAhead.type(text, at: now, names: visible.map(\.name), current: current) {
-            setSelection([visible[index].url.standardizedFileURL], scroll: true)
-        } else {
-            NSSound.beep()
-        }
-        return true
-    }
-
-    /// Middle-click on a folder opens it in a new tab.
-    func openInNewTab(_ item: FileItem) {
-        guard item.isFolder, mode != .recycleBin, mode != .network else { return }
-        onOpenInNewTab?(.folder(item.url))
-    }
-
     /// Re-applies theme settings (row heights, colours, fonts) after they change.
     func applyTheme() {
         guard isViewLoaded else { return }
@@ -444,34 +487,6 @@ final class ContentViewController: NSViewController {
             setSelection(selectedURLs, scroll: false)
         } else {
             reconfigureVisibleItems()
-        }
-    }
-
-    // MARK: Display helpers
-
-    func icon(for item: FileItem) -> NSImage {
-        if mode == .network { return NSImage(named: NSImage.computerName) ?? NSImage() }
-        return NSWorkspace.shared.icon(forFile: item.url.path)
-    }
-
-    func isCut(_ item: FileItem) -> Bool {
-        cutURLs.contains(item.url.standardizedFileURL)
-    }
-
-    /// Redraws visible items after a change that doesn't affect layout (cut, checkboxes).
-    func reconfigureVisibleItems() {
-        if isDetailsMode {
-            let visible = tableView.rows(in: tableView.visibleRect)
-            let rows = IndexSet(integersIn: visible.location..<visible.location + visible.length)
-                .filteredIndexSet { listContent.item(atRow: $0) != nil }
-            guard !rows.isEmpty else { return }
-            let columns = IndexSet(integersIn: 0..<tableView.numberOfColumns)
-            tableView.reloadData(forRowIndexes: rows, columnIndexes: columns)
-        } else {
-            for indexPath in collectionView.indexPathsForVisibleItems() {
-                guard let cell = collectionView.item(at: indexPath) as? FileCollectionItem else { continue }
-                configure(cell, at: indexPath)
-            }
         }
     }
 

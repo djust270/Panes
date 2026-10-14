@@ -70,51 +70,65 @@ public struct FileItemSort: Sendable, Hashable, Codable {
         self.ascending = ascending
     }
 
+    /// Folders first, then by the key; ties by name. Each item's key is computed once, not
+    /// once per comparison (type names come from LaunchServices), and names are compared as
+    /// `NSString`s, which skips bridging: 100,000 items sort in well under a second.
     public func sorted(_ items: [FileItem]) -> [FileItem] {
-        items.sorted { lhs, rhs in
-            if lhs.isFolder != rhs.isFolder {
-                return lhs.isFolder
+        // Plain arrays: reading a field through `items[i]` copies (and retains) the whole item.
+        let names = items.map { $0.name as NSString }
+        let folders = items.map(\.isFolder)
+        let keys = items.map(sortValue)
+        let order = Array(items.indices).sorted { lhs, rhs in
+            if folders[lhs] != folders[rhs] {
+                return folders[lhs]
             }
-            let result = compare(lhs, rhs)
+            let result = key == .name ? nameOrder0(names[lhs], names[rhs]) : compare(keys[lhs], keys[rhs])
             if result != 0 {
                 return ascending ? result < 0 : result > 0
             }
-            return nameOrder(lhs, rhs) < 0
+            return nameOrder0(names[lhs], names[rhs]) < 0
         }
+        return order.map { items[$0] }
+    }
+
+    /// An item's value for the sort key.
+    private enum SortValue {
+        case name
+        case text(NSString)
+        /// Empty text sorts last in either direction.
+        case textEmptyLast(NSString)
+        /// `nil` sorts last in either direction.
+        case number(Int64?)
+        case date(Date)
     }
 
     // swiftlint:disable:next cyclomatic_complexity
-    private func compare(_ lhs: FileItem, _ rhs: FileItem) -> Int {
+    private func sortValue(_ item: FileItem) -> SortValue {
         switch key {
-        case .name:
-            return nameOrder(lhs, rhs)
-        case .dateModified:
-            return order(lhs.dateModified ?? .distantPast, rhs.dateModified ?? .distantPast)
-        case .type:
-            return nameOrder0(lhs.typeDescription, rhs.typeDescription)
-        case .size:
-            return sizeOrder(lhs.size, rhs.size)
-        case .dateCreated:
-            return order(lhs.dateCreated ?? .distantPast, rhs.dateCreated ?? .distantPast)
-        case .tags:
-            return emptyLastOrder(lhs.properties?.tagsText ?? "", rhs.properties?.tagsText ?? "")
-        case .dimensions:
-            return sizeOrder(lhs.properties?.pixelCount.map(Int64.init), rhs.properties?.pixelCount.map(Int64.init))
-        case .duration:
-            return sizeOrder(
-                lhs.properties?.duration.map { Int64($0 * 1000) },
-                rhs.properties?.duration.map { Int64($0 * 1000) }
-            )
-        case .originalLocation:
-            return nameOrder0(lhs.originalFolderPath, rhs.originalFolderPath)
-        case .dateDeleted:
-            return order(lhs.trashInfo?.dateDeleted ?? .distantPast, rhs.trashInfo?.dateDeleted ?? .distantPast)
-        case .folder:
-            return nameOrder0(lhs.folderPath, rhs.folderPath)
-        case .totalSize:
-            return sizeOrder(lhs.volume?.totalCapacity, rhs.volume?.totalCapacity)
-        case .freeSpace:
-            return sizeOrder(lhs.volume?.availableCapacity, rhs.volume?.availableCapacity)
+        case .name: return .name
+        case .dateModified: return .date(item.dateModified ?? .distantPast)
+        case .type: return .text(item.typeDescription as NSString)
+        case .size: return .number(item.size)
+        case .dateCreated: return .date(item.dateCreated ?? .distantPast)
+        case .tags: return .textEmptyLast((item.properties?.tagsText ?? "") as NSString)
+        case .dimensions: return .number(item.properties?.pixelCount.map(Int64.init))
+        case .duration: return .number(item.properties?.duration.map { Int64($0 * 1000) })
+        case .originalLocation: return .text(item.originalFolderPath as NSString)
+        case .dateDeleted: return .date(item.trashInfo?.dateDeleted ?? .distantPast)
+        case .folder: return .text(item.folderPath as NSString)
+        case .totalSize: return .number(item.volume?.totalCapacity)
+        case .freeSpace: return .number(item.volume?.availableCapacity)
+        }
+    }
+
+    /// Ties compare equal (the caller breaks them by name); `.name` is compared by the caller.
+    private func compare(_ lhs: SortValue, _ rhs: SortValue) -> Int {
+        switch (lhs, rhs) {
+        case let (.text(lhs), .text(rhs)): return nameOrder0(lhs, rhs)
+        case let (.textEmptyLast(lhs), .textEmptyLast(rhs)): return emptyLastOrder(lhs, rhs)
+        case let (.number(lhs), .number(rhs)): return sizeOrder(lhs, rhs)
+        case let (.date(lhs), .date(rhs)): return order(lhs, rhs)
+        default: return 0
         }
     }
 
@@ -131,8 +145,8 @@ public struct FileItemSort: Sendable, Hashable, Codable {
     }
 
     /// Empty text (e.g. untagged files) sorts last in either direction.
-    private func emptyLastOrder(_ lhs: String, _ rhs: String) -> Int {
-        switch (lhs.isEmpty, rhs.isEmpty) {
+    private func emptyLastOrder(_ lhs: NSString, _ rhs: NSString) -> Int {
+        switch (lhs.length == 0, rhs.length == 0) {
         case (true, true): return 0
         case (true, false): return ascending ? 1 : -1
         case (false, true): return ascending ? -1 : 1
@@ -140,12 +154,8 @@ public struct FileItemSort: Sendable, Hashable, Codable {
         }
     }
 
-    private func nameOrder(_ lhs: FileItem, _ rhs: FileItem) -> Int {
-        nameOrder0(lhs.name, rhs.name)
-    }
-
-    private func nameOrder0(_ lhs: String, _ rhs: String) -> Int {
-        switch lhs.localizedStandardCompare(rhs) {
+    private func nameOrder0(_ lhs: NSString, _ rhs: NSString) -> Int {
+        switch lhs.localizedStandardCompare(rhs as String) {
         case .orderedAscending: return -1
         case .orderedSame: return 0
         case .orderedDescending: return 1

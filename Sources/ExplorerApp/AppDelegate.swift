@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        Updater.shared.start() // before the menu bar is built: it adds "Check for Updates…"
         settingsObserver = AppSettings.observe { [weak self] in self?.applySettings() }
         KeyboardShortcuts.installEventMonitors()
         DriveCenter.start()
@@ -36,6 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Launched to open a folder: that's the window, not the start location.
         if windowControllers.isEmpty { openWindow(at: Self.newTabLocation) }
         NSApp.activate(ignoringOtherApps: true)
+        FullDiskAccessWindowController.showIfNeeded()
+        CrashReporter.checkAtLaunch()
+    }
+
+    /// Clicking the Dock icon with no windows open opens one.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if windowControllers.isEmpty { openWindow(at: Self.newTabLocation) }
+        return true
     }
 
     /// Rebuilds the menu bar when the keyboard scheme changes, and applies the theme.
@@ -100,8 +109,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.showWindow(nil)
     }
 
+    @objc func checkForUpdates(_ sender: Any?) {
+        Updater.shared.checkForUpdates()
+    }
+
+    @objc func showFullDiskAccess(_ sender: Any?) {
+        FullDiskAccessWindowController.shared.show()
+    }
+
+    @objc func reportProblem(_ sender: Any?) {
+        CrashReporter.reportProblem()
+    }
+
     @objc func toggleHiddenFiles(_ sender: Any?) {
         AppSettings.showsHiddenFiles.toggle()
+    }
+
+    @objc func toggleFileExtensions(_ sender: Any?) {
+        AppSettings.showsFileExtensions.toggle()
     }
 
     @objc func toggleCompactView(_ sender: Any?) {
@@ -155,10 +180,14 @@ extension AppDelegate: NSMenuItemValidation {
         switch menuItem.action {
         case #selector(toggleHiddenFiles(_:)):
             menuItem.state = AppSettings.showsHiddenFiles ? .on : .off
+        case #selector(toggleFileExtensions(_:)):
+            menuItem.state = AppSettings.showsFileExtensions ? .on : .off
         case #selector(toggleCompactView(_:)):
             menuItem.state = AppSettings.compactView ? .on : .off
         case #selector(toggleDualPane(_:)):
             menuItem.state = AppSettings.dualPane ? .on : .off
+        case #selector(checkForUpdates(_:)):
+            return Updater.shared.canCheckForUpdates
         default:
             break
         }

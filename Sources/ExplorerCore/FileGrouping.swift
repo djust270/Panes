@@ -85,8 +85,9 @@ public struct FileGrouper: Sendable {
     public func groups(_ sortedItems: [FileItem], by grouping: FileGrouping) -> [FileGroup] {
         var order: [Bucket] = []
         var members: [Bucket: [FileItem]] = [:]
+        let boundaries = DateBoundaries(now: now, calendar: calendar)
         for item in sortedItems {
-            let bucket = bucket(for: item, key: grouping.key)
+            let bucket = bucket(for: item, key: grouping.key, boundaries: boundaries)
             if members[bucket] == nil { order.append(bucket) }
             members[bucket, default: []].append(item)
         }
@@ -110,12 +111,12 @@ public struct FileGrouper: Sendable {
         static let unspecified = Bucket(rank: Int.max, title: "Unspecified")
     }
 
-    private func bucket(for item: FileItem, key: FileGroupKey) -> Bucket {
+    private func bucket(for item: FileItem, key: FileGroupKey, boundaries: DateBoundaries) -> Bucket {
         switch key {
         case .name: return nameBucket(item.name)
-        case .dateModified: return dateBucket(item.dateModified)
-        case .dateCreated: return dateBucket(item.dateCreated)
-        case .dateDeleted: return dateBucket(item.trashInfo?.dateDeleted)
+        case .dateModified: return dateBucket(item.dateModified, boundaries)
+        case .dateCreated: return dateBucket(item.dateCreated, boundaries)
+        case .dateDeleted: return dateBucket(item.trashInfo?.dateDeleted, boundaries)
         case .type: return Bucket(rank: 0, title: item.typeDescription)
         case .size: return sizeBucket(item.size)
         case .originalLocation:
@@ -138,17 +139,28 @@ public struct FileGrouper: Sendable {
         }
     }
 
+    /// The start of each date group, worked out once per grouping rather than per item.
+    private struct DateBoundaries {
+        let tomorrow, today, yesterday, thisWeek, lastWeek, thisMonth, lastMonth, thisYear: Date
+
+        init(now: Date, calendar: Calendar) {
+            today = calendar.startOfDay(for: now)
+            tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+            yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? now
+            thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? today
+            lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeek) ?? thisWeek
+            thisMonth = calendar.dateInterval(of: .month, for: now)?.start ?? today
+            lastMonth = calendar.date(byAdding: .month, value: -1, to: thisMonth) ?? thisMonth
+            thisYear = calendar.dateInterval(of: .year, for: now)?.start ?? today
+        }
+    }
+
     /// Ranks run oldest (0) to newest, so ascending order is chronological.
-    private func dateBucket(_ date: Date?) -> Bucket {
+    private func dateBucket(_ date: Date?, _ boundaries: DateBoundaries) -> Bucket {
         guard let date else { return .unspecified }
-        let today = calendar.startOfDay(for: now)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? now
-        let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? today
-        let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeek) ?? thisWeek
-        let thisMonth = calendar.dateInterval(of: .month, for: now)?.start ?? today
-        let lastMonth = calendar.date(byAdding: .month, value: -1, to: thisMonth) ?? thisMonth
-        let thisYear = calendar.dateInterval(of: .year, for: now)?.start ?? today
+        let (tomorrow, today, yesterday) = (boundaries.tomorrow, boundaries.today, boundaries.yesterday)
+        let (thisWeek, lastWeek) = (boundaries.thisWeek, boundaries.lastWeek)
+        let (thisMonth, lastMonth, thisYear) = (boundaries.thisMonth, boundaries.lastMonth, boundaries.thisYear)
 
         if date >= tomorrow { return Bucket(rank: 9, title: "In the future") }
         if date >= today { return Bucket(rank: 8, title: "Today") }

@@ -4,7 +4,7 @@ import ExplorerCore
 /// Selection commands: Select all / none, Invert selection, and item checkboxes.
 extension ContentViewController {
     func selectAllItems() {
-        setSelection(Set(listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)), scroll: false)
+        setSelection(Set(listContent.sections.flatMap(\.items).map(\.url)), scroll: false)
     }
 
     func selectNone() {
@@ -13,7 +13,7 @@ extension ContentViewController {
 
     func invertSelection() {
         let selected = selectedURLs
-        let visible = listContent.sections.flatMap(\.items).map(\.url.standardizedFileURL)
+        let visible = listContent.sections.flatMap(\.items).map(\.url)
         setSelection(Set(visible.filter { !selected.contains($0) }), scroll: false)
     }
 

@@ -20,8 +20,14 @@ public struct TypeAheadSelector: Sendable {
     }
 
     /// Adds `text` to the prefix and returns the index in `names` to select, or `nil` for no
-    /// match. `current` is the selected index (the focused item), if any.
-    public mutating func type(_ text: String, at now: Date, names: [String], current: Int?) -> Int? {
+    /// match. `current` is the selected index (the focused item), if any. `names` can be lazy:
+    /// only the names up to the match are read.
+    public mutating func type<Names: RandomAccessCollection>(
+        _ text: String,
+        at now: Date,
+        names: Names,
+        current: Int?
+    ) -> Int? where Names.Element == String, Names.Index == Int {
         guard !text.isEmpty else { return nil }
         buffer = (currentPrefix(at: now) ?? "") + text
         lastKeyTime = now
@@ -44,7 +50,8 @@ public struct TypeAheadSelector: Sendable {
 
     /// The first name at or after `from` (wrapping around) that starts with `prefix`,
     /// ignoring case and diacritics.
-    static func firstMatch(prefix: String, in names: [String], from: Int) -> Int? {
+    static func firstMatch<Names: RandomAccessCollection>(prefix: String, in names: Names, from: Int) -> Int?
+    where Names.Element == String, Names.Index == Int {
         let count = names.count
         for offset in 0..<count {
             let index = (from + offset) % count

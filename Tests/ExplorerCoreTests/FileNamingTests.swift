@@ -33,6 +33,17 @@ import Testing
         #expect(FileNaming.hasExtension(URL(fileURLWithPath: "/x/notes.txt"), isDirectory: false))
     }
 
+    @Test func hiddenExtensionsOnlyForKnownTypes() {
+        #expect(FileNaming.displayName("report.docx", isFolder: false, showingExtensions: false) == "report")
+        #expect(FileNaming.displayName("archive.tar.gz", isFolder: false, showingExtensions: false) == "archive.tar")
+        #expect(FileNaming.displayName("Tool.app", isFolder: false, showingExtensions: false) == "Tool")
+        #expect(FileNaming.displayName("notes.zzqx", isFolder: false, showingExtensions: false) == "notes.zzqx")
+        #expect(FileNaming.displayName(".zshrc", isFolder: false, showingExtensions: false) == ".zshrc")
+        #expect(FileNaming.displayName("site.com", isFolder: true, showingExtensions: false) == "site.com")
+        #expect(FileNaming.displayName("photo.jpg", isFolder: false, showingExtensions: true) == "photo.jpg")
+        #expect(FileNaming.hiddenExtension(of: "photo.JPG", isFolder: false) == ".JPG")
+    }
+
     @Test func validation() {
         #expect(FileNaming.validationError(for: "fine name.txt") == nil)
         #expect(FileNaming.validationError(for: "") != nil)

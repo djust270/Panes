@@ -55,6 +55,30 @@ final class ExplorerRootViewController: NSViewController {
         showSidePane(isCompanion ? .none : SidePaneViewController.savedPane, animated: false)
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // After the window has shown: it computes a key view loop of its own the first time,
+        // replacing links made earlier.
+        linkKeyViews()
+    }
+
+    /// Tab order: address bar row, command bar, navigation pane, file list, status bar buttons,
+    /// and round again. Buttons only take part with Full Keyboard Access on, and hidden views
+    /// (the collapsed navigation pane, whichever file view isn't showing) are skipped.
+    private func linkKeyViews() {
+        let views = addressBar.keyViews + commandBar.keyViews
+            + [navigationPane.keyView, content.tableView, content.collectionView] + statusBar.keyViews
+        for (view, next) in zip(views, views.dropFirst() + [views[0]]) {
+            view.nextKeyView = next
+        }
+    }
+
+    /// F6's stops: address bar, search box, navigation pane and file list (those showing).
+    var focusRegions: [NSView] {
+        [addressBar.breadcrumbBar, addressBar.searchKeyView, isNavigationPaneShown ? navigationPane.keyView : nil,
+         content.activeView].compactMap(\.self)
+    }
+
     /// Header layer (address and command bars) over the body (panes and status bar).
     private func makeLayout() -> NSView {
         let header = LayerView(color: Theme.headerColor)
@@ -140,6 +164,7 @@ final class StatusBarView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let detailsButton = StatusBarView.modeButton("list.bullet", "Details")
     private let iconsButton = StatusBarView.modeButton("square.grid.2x2", "Large icons")
+    var keyViews: [NSView] { [detailsButton, iconsButton] }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

@@ -170,7 +170,7 @@ private final class DetailsPaneView: NSView {
         guard item != shownItem else { return }
         shownItem = item
 
-        title.stringValue = item.name
+        title.stringValue = item.displayName(showingExtensions: AppSettings.showsFileExtensions)
         subtitle.stringValue = item.typeDescription
         imageView.image = NSWorkspace.shared.icon(forFile: item.url.path)
         let scale = window?.backingScaleFactor ?? 2

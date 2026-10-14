@@ -33,6 +33,8 @@ public struct DirectoryLoader: Sendable {
     }
 
     static func loadSync(_ directory: URL, options: Options) throws -> [FileItem] {
+        // Once here, so every item's URL is standardized without paying for it per item.
+        let directory = directory.standardizedFileURL
         do {
             return try BulkDirectoryReader.read(directory, includeHidden: options.includeHidden)
         } catch is BulkDirectoryReader.Unsupported {

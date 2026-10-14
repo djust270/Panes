@@ -33,6 +33,12 @@ final class CommandBarView: NSView {
     private let moreButton = FluentButton(symbol: "ellipsis", toolTip: "See more")
     private let detailsButton = FluentButton(symbol: "sidebar.right", title: "Details", toolTip: "Details pane")
 
+    /// In Tab order (buttons take focus only with Full Keyboard Access).
+    var keyViews: [NSView] {
+        [newButton, cutButton, copyButton, pasteButton, renameButton, shareButton, deleteButton,
+         sortButton, viewButton, filterButton, moreButton, detailsButton]
+    }
+
     /// Buttons that send a tab action, validated like menu items.
     private var actionButtons: [(FluentButton, Selector)] {
         [
@@ -157,6 +163,7 @@ final class CommandBarView: NSView {
         show.add("Dual pane", #selector(AppDelegate.toggleDualPane(_:)), modifiers: [])
         show.addItem(.separator())
         show.add("Item check boxes", #selector(ExplorerTabController.toggleItemCheckboxes(_:)), modifiers: [])
+        show.add("File name extensions", #selector(AppDelegate.toggleFileExtensions(_:)), modifiers: [])
         show.add("Hidden items", #selector(AppDelegate.toggleHiddenFiles(_:)), command: .hiddenFiles)
         let showItem = NSMenuItem(title: "Show", action: nil, keyEquivalent: "")
         showItem.submenu = show

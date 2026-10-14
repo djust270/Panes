@@ -82,6 +82,24 @@ final class BreadcrumbBarView: NSView {
         beginEditing()
     }
 
+    /// Reachable with Tab and F6, as on Windows; taking focus switches to the editable path.
+    override var acceptsFirstResponder: Bool { location != nil && !isEditing }
+
+    override func becomeFirstResponder() -> Bool {
+        // Only for Tab / Shift+Tab: AppKit also moves focus here on its own, e.g. when the
+        // focused file view is hidden by a layout change.
+        let event = NSApp.currentEvent
+        guard event?.type == .keyDown, ["\t", "\u{19}"].contains(event?.charactersIgnoringModifiers) else {
+            return true
+        }
+        // Not from inside becomeFirstResponder: beginEditing moves focus on to the text field.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, window?.firstResponder === self else { return }
+            beginEditing()
+        }
+        return true
+    }
+
     func beginEditing() {
         guard let location, !isEditing else { return }
         isEditing = true
@@ -113,12 +131,13 @@ final class BreadcrumbBarView: NSView {
         onNavigate?(.folder(path: path))
     }
 
-    private func finishEditingUI() {
+    /// Back to the breadcrumbs; `notify` hands focus back to the files.
+    private func finishEditingUI(notify: Bool = true) {
         isEditing = false
         pathField.isHidden = true
         scrollView.isHidden = false
         rebuildSegments()
-        onEndEditing?()
+        if notify { onEndEditing?() }
     }
 
     private func rebuildSegments() {
@@ -150,7 +169,8 @@ final class BreadcrumbBarView: NSView {
         let chevron = LocationButton(title: "", target: self, action: #selector(chevronClicked(_:)))
         chevron.location = ancestor
         chevron.isBordered = false
-        chevron.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
+        chevron.image = NSImage(systemSymbolName: "chevron.right",
+                                accessibilityDescription: "Folders in \(ancestor.displayName)")
         chevron.imagePosition = .imageOnly
         chevron.contentTintColor = .secondaryLabelColor
         chevron.setButtonType(.momentaryPushIn)
@@ -193,9 +213,24 @@ extension BreadcrumbBarView: NSTextFieldDelegate {
         case #selector(NSResponder.cancelOperation(_:)):
             endEditing(navigate: false)
             return true
+        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+            // On from the address bar, not from the text field inside it; the field's editing
+            // ends as focus leaves (`controlTextDidEndEditing`).
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                window?.selectKeyView(following: self)
+            } else {
+                window?.selectKeyView(preceding: self)
+            }
+            return true
         default:
             return false
         }
+    }
+
+    /// Focus moved elsewhere (a click, F6): back to the breadcrumbs, as on Windows.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard isEditing else { return }
+        finishEditingUI(notify: false)
     }
 }
 

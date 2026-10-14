@@ -75,7 +75,7 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
         let viewMode = cellMode(forSection: indexPath.section)
         var image = icon(for: item)
         if viewMode.showsThumbnails, mode != .home, listsFiles {
-            let url = item.url.standardizedFileURL
+            let url = item.url
             let scale = view.window?.backingScaleFactor ?? 2
             let thumbnail = ThumbnailProvider.shared.thumbnail(
                 for: item,
@@ -129,7 +129,7 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
             if viewMode == .tiles {
                 return ItemDetailText(line2: folder, line3: QuickAccess.store.isPinned(item.url) ? "Pinned" : "")
             }
-            let used = homeDates[item.url.standardizedFileURL.path] ?? item.dateModified
+            let used = homeDates[item.url.path] ?? item.dateModified
             return ItemDetailText(line2: folder, right1: used.map { dateFormatter.string(from: $0) } ?? "")
         }
         switch viewMode {

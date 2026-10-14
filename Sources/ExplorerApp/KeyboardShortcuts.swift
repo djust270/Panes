@@ -26,6 +26,7 @@ enum KeyboardShortcuts {
             .f3: character(NSF3FunctionKey),
             .f4: character(NSF4FunctionKey),
             .f5: character(NSF5FunctionKey),
+            .f6: character(NSF6FunctionKey),
             .leftArrow: character(NSLeftArrowFunctionKey),
             .rightArrow: character(NSRightArrowFunctionKey),
             .upArrow: character(NSUpArrowFunctionKey),

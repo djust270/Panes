@@ -338,6 +338,14 @@ final class CapacityChartView: NSView {
     static let freeColor = NSColor.dynamic(light: NSColor(white: 0.82, alpha: 1), dark: NSColor(white: 0.32, alpha: 1))
     var usedFraction: Double = 0 { didSet { needsDisplay = true } }
 
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .levelIndicator }
+
+    override func accessibilityLabel() -> String? { "Used space" }
+
+    override func accessibilityValue() -> Any? { "\(Int((usedFraction * 100).rounded()))%" }
+
     override func draw(_ dirtyRect: NSRect) {
         let lineWidth: CGFloat = 22
         let rect = bounds.insetBy(dx: lineWidth / 2 + 1, dy: lineWidth / 2 + 1)
