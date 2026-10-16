@@ -36,6 +36,9 @@ final class NavigationPaneViewController: NSViewController {
         outlineView.rowHeight = Theme.navigationRowHeight
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.indentationPerLevel = 14
+        // The column fills the pane. Left on, this shrinks it to the indentation width when
+        // This PC's children reload after an unmount, hiding every label.
+        outlineView.autoresizesOutlineColumn = false
         outlineView.menu = makeContextMenu()
         outlineView.onMiddleClick = { [weak self] row in
             guard let self, let location = location(atRow: row) else { return }
