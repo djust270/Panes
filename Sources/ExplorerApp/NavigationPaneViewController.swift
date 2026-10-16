@@ -3,9 +3,13 @@ import ExplorerCore
 
 /// Navigation pane: Home, the Quick access pins (by default the well-known folders), This PC
 /// (lazily expanded to mounted volumes), Network and the Recycle Bin. Folders and the Recycle
-/// Bin accept drops. Pins follow Quick access changes made anywhere in the app.
+/// Bin accept drops. Pins follow Quick access changes made anywhere in the app, and are
+/// reordered by dragging.
 @MainActor
 final class NavigationPaneViewController: NSViewController {
+    /// A pin being dragged to a new place; holds its row's ID.
+    static let pinPasteboardType = NSPasteboard.PasteboardType("co.justgeeks.explorer.pin")
+
     var onSelect: ((ExplorerLocation) -> Void)?
     /// "Open in new tab" or middle-click on a location.
     var onOpenInNewTab: ((ExplorerLocation) -> Void)?
@@ -48,7 +52,9 @@ final class NavigationPaneViewController: NSViewController {
         outlineView.delegate = self
         outlineView.autosaveExpandedItems = true
         outlineView.autosaveName = "NavigationPaneOutline"
-        outlineView.registerForDraggedTypes([.fileURL])
+        outlineView.registerForDraggedTypes([.fileURL, Self.pinPasteboardType])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+        outlineView.setDraggingSourceOperationMask([], forLocal: false)
 
         scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
@@ -166,12 +172,25 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
         return roots.first { $0.id == id }
     }
 
+    /// Only pins can be dragged, and only within the navigation pane.
+    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+        guard let pin = item as? SidebarItem, pin.isPinnedFolder else { return nil }
+        let writer = NSPasteboardItem()
+        writer.setString(pin.id, forType: Self.pinPasteboardType)
+        return writer
+    }
+
     func outlineView(
         _ outlineView: NSOutlineView,
         validateDrop info: NSDraggingInfo,
         proposedItem item: Any?,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
+        if info.draggingPasteboard.string(forType: Self.pinPasteboardType) != nil {
+            guard let target = pinDropTarget(info, proposedItem: item, proposedChildIndex: index) else { return [] }
+            outlineView.setDropItem(nil, dropChildIndex: target)
+            return .move
+        }
         guard index == NSOutlineViewDropOnItemIndex,
               let location = dropLocation(for: item),
               let urls = ContentViewController.fileURLs(in: info.draggingPasteboard) else { return [] }
@@ -184,6 +203,15 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
         item: Any?,
         childIndex index: Int
     ) -> Bool {
+        if let id = info.draggingPasteboard.string(forType: Self.pinPasteboardType) {
+            let pinCount = roots.filter(\.isPinnedFolder).count
+            guard item == nil, let source = roots.firstIndex(where: { $0.id == id }),
+                  let move = SidebarTree.pinMove(fromRoot: source, toRoot: index, pinCount: pinCount) else {
+                return false
+            }
+            QuickAccess.change { $0.movePin(from: move.from, to: move.to) }
+            return true
+        }
         guard let dropHandler,
               let location = dropLocation(for: item),
               let urls = ContentViewController.fileURLs(in: info.draggingPasteboard) else { return false }
@@ -192,6 +220,24 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
         guard !operation.isEmpty else { return false }
         dropHandler.performDrop(of: urls, into: location, operation: operation)
         return true
+    }
+
+    /// The gap among the roots where a dragged pin would land: the proposed gap, or above or
+    /// below the root row under the pointer; kept between Home and This PC. Nil over a drive.
+    private func pinDropTarget(_ info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> Int? {
+        let target: Int
+        if let item = item as? SidebarItem {
+            guard index == NSOutlineViewDropOnItemIndex,
+                  let rootIndex = roots.firstIndex(where: { $0.id == item.id }) else { return nil }
+            let rect = outlineView.rect(ofRow: outlineView.row(forItem: item))
+            let point = outlineView.convert(info.draggingLocation, from: nil)
+            target = point.y > rect.midY ? rootIndex + 1 : rootIndex
+        } else {
+            guard index != NSOutlineViewDropOnItemIndex else { return nil }
+            target = index
+        }
+        let pinCount = roots.filter(\.isPinnedFolder).count
+        return min(max(target, 1), pinCount + 1)
     }
 
     /// Rows that accept drops: real folders (including volumes) and the Recycle Bin.

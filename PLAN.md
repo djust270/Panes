@@ -166,7 +166,7 @@ needs checking by eye.
 - [x] Home page: Quick Access tiles (pinned + frequent folders), Favorites, Recent files (Spotlight + app history)
 - [x] "Pin to Quick Access" / "Pin to Home" (Windows 11's "Add to Favorites" for files)
 - [x] Search box scoped to the current folder: Spotlight (`NSMetadataQuery`) with fallback walk for non-indexed volumes; `kind:`, `date:`, `size:` filters; search-results view
-- [ ] Reorder pins by dragging in the navigation pane (`QuickAccessStore.movePin` exists; no UI yet)
+- [x] Reorder pins by dragging in the navigation pane (drop between pins; Home follows the new order)
 
 **Status: implemented, not yet checked by hand.** Driven by a temporary in-app self-test (Home, Ctrl+F and typing,
 refining, Escape, pattern search, pinning, Home context menus, new tab); Home and search results checked in

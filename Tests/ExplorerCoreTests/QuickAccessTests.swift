@@ -127,6 +127,22 @@ import Testing
         #expect(roots[1].location == .folder(projects.standardizedFileURL))
     }
 
+    @Test func pinDropsBecomeMoves() {
+        // Pins are roots 1...3; the target is the gap before that root.
+        #expect(SidebarTree.pinMove(fromRoot: 3, toRoot: 1, pinCount: 3)! == (2, 0))
+        #expect(SidebarTree.pinMove(fromRoot: 1, toRoot: 4, pinCount: 3)! == (0, 2))
+        #expect(SidebarTree.pinMove(fromRoot: 1, toRoot: 3, pinCount: 3)! == (0, 1))
+        // Dropped in its own gaps: no move.
+        #expect(SidebarTree.pinMove(fromRoot: 2, toRoot: 2, pinCount: 3) == nil)
+        #expect(SidebarTree.pinMove(fromRoot: 2, toRoot: 3, pinCount: 3) == nil)
+        // Above Home or below This PC: clamped to the first and last gap.
+        #expect(SidebarTree.pinMove(fromRoot: 3, toRoot: 0, pinCount: 3)! == (2, 0))
+        #expect(SidebarTree.pinMove(fromRoot: 1, toRoot: 9, pinCount: 3)! == (0, 2))
+        // Not a pin.
+        #expect(SidebarTree.pinMove(fromRoot: 0, toRoot: 2, pinCount: 3) == nil)
+        #expect(SidebarTree.pinMove(fromRoot: 4, toRoot: 2, pinCount: 3) == nil)
+    }
+
     @Test func recentsSkipLibraryHiddenAndPackageContents() {
         let home = "/Users/me"
         #expect(SpotlightRecents.isUserFile("/Users/me/Documents/a.pdf", home: home))

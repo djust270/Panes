@@ -90,6 +90,17 @@ public enum SidebarTree {
         return items
     }
 
+    /// A pin dragged from root index `source` to the gap before root index `target`, as
+    /// `QuickAccessStore.movePin` arguments; nil if it would stay put. The pins are roots
+    /// `1...pinCount` (Home comes first), and `target` is clamped to their gaps.
+    public static func pinMove(fromRoot source: Int, toRoot target: Int, pinCount: Int) -> (from: Int, to: Int)? {
+        guard pinCount > 0, (1...pinCount).contains(source) else { return nil }
+        let from = source - 1
+        var destination = min(max(target, 1), pinCount + 1) - 1
+        if destination > from { destination -= 1 }
+        return destination == from ? nil : (from, destination)
+    }
+
     /// Children of an expandable root: This PC's volumes; `[]` for everything else.
     /// - Parameter names: display names by mount point (e.g. with drive letters); the volume
     ///   name otherwise.
