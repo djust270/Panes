@@ -203,7 +203,7 @@ final class SpotlightSearch {
         let filter = filter
         let complete = !isGathering
         let truncated = count > FileSearch.resultLimit
-        conversion = Task { [weak self] in
+        conversion = Task { [weak self, paths] in
             let loaded = await Task.detached(priority: .userInitiated) { () -> [(String, FileItem)] in
                 paths.compactMap { path in
                     if let item = known[path] { return (path, item) }
