@@ -127,6 +127,8 @@ public final class FolderViewSettingsStore {
         storage.folderDefault ?? .folderDefault
     }
 
+    /// A folder's own view, or the default for its kind; cloud folders (OneDrive etc.) show
+    /// Status after Name by default, as on Windows.
     public func settings(for location: ExplorerLocation) -> FolderViewSettings {
         let kind = location.listKind
         if let key = location.viewSettingsKey, let entry = storage.entries[key] {
@@ -137,7 +139,12 @@ public final class FolderViewSettingsStore {
         case .recycleBin: return .recycleBinDefault
         case .searchResults: return .searchDefault
         case .drives: return .drivesDefault
-        case .folder: return folderDefault
+        case .folder:
+            var settings = folderDefault
+            if let url = location.fileURL, CloudStorage.isInCloudFolder(url), !settings.columns.contains(.status) {
+                settings.columns.insert(.status, at: min(1, settings.columns.count))
+            }
+            return settings
         }
     }
 

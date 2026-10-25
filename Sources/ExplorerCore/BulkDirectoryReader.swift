@@ -113,7 +113,7 @@ enum BulkDirectoryReader {
             typeIdentifier = types.type(forExtension: ext, directory: false)?.identifier ?? UTType.data.identifier
         }
 
-        return FileItem(
+        var item = FileItem(
             url: directory.appendingPathComponent(raw.name, isDirectory: kind == .directory || kind == .package),
             name: raw.name,
             kind: kind,
@@ -123,6 +123,8 @@ enum BulkDirectoryReader {
             isHidden: isHidden,
             typeIdentifier: typeIdentifier
         )
+        item.isOnlineOnly = raw.flags & UInt32(SF_DATALESS) != 0
+        return item
     }
 
     private static func date(_ time: timespec) -> Date {

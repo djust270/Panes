@@ -45,7 +45,8 @@ public struct FileProperties: Sendable, Hashable {
 
 public enum FilePropertiesReader {
     /// Reads tags from the file system and dimensions/duration from Spotlight, falling back to
-    /// the image header for pictures on volumes Spotlight doesn't index.
+    /// the image header for pictures on volumes Spotlight doesn't index — unless the picture is
+    /// online-only, as reading it would download it.
     public static func read(_ item: FileItem) -> FileProperties {
         var properties = FileProperties()
         let values = try? item.url.resourceValues(forKeys: [.tagNamesKey])
@@ -57,7 +58,7 @@ public enum FilePropertiesReader {
             properties.pixelHeight = intValue(metadata, kMDItemPixelHeight)
             properties.duration = (MDItemCopyAttribute(metadata, kMDItemDurationSeconds) as? NSNumber)?.doubleValue
         }
-        if properties.pixelWidth == nil, isImage(item) {
+        if properties.pixelWidth == nil, !item.isOnlineOnly, isImage(item) {
             readImageHeader(item.url, into: &properties)
         }
         return properties

@@ -57,6 +57,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     private static func defaultWidth(_ column: FileColumn) -> CGFloat {
         switch column {
         case .name: return 320
+        case .status: return 60
         case .originalLocation, .folder: return 260
         case .dateDeleted, .dateModified, .dateCreated: return 150
         case .type: return 120
@@ -144,6 +145,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
             ?? makeCell(for: column, identifier: cellIdentifier)
 
         cell.textField?.stringValue = text(for: column, item: item)
+        (cell as? StatusCellView)?.show(item.cloudStatus)
         // Set on every use, so reused cells follow a style change. Windows 98 has no grey columns.
         cell.textField?.font = Theme.font(ofSize: 12)
         if column != .name { cell.textField?.textColor = Theme.isClassic ? .labelColor : .secondaryLabelColor }
@@ -170,6 +172,11 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.identifier = identifier
             return cell
         }
+        if column == .status {
+            let cell = StatusCellView()
+            cell.identifier = identifier
+            return cell
+        }
         let cell = NSTableCellView()
         cell.identifier = identifier
         let textField = NSTextField(labelWithString: "")
@@ -191,6 +198,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     func text(for column: FileColumn, item: FileItem) -> String {
         switch column {
         case .name: return item.displayName(showingExtensions: AppSettings.showsFileExtensions)
+        case .status: return "" // A glyph (`StatusCellView`).
         case .originalLocation: return item.originalFolderPath
         case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
         case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""

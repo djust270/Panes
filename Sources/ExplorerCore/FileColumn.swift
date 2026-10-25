@@ -3,6 +3,8 @@ import Foundation
 /// A Details-view column. Raw values are persisted in folder view settings.
 public enum FileColumn: String, Sendable, Codable, CaseIterable {
     case name
+    /// Sync state in cloud folders (OneDrive etc.).
+    case status
     case originalLocation = "original-location"
     case dateDeleted = "date-deleted"
     case dateModified = "date-modified"
@@ -22,6 +24,7 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
     public var title: String {
         switch self {
         case .name: return "Name"
+        case .status: return "Status"
         case .originalLocation: return "Original Location"
         case .dateDeleted: return "Date Deleted"
         case .dateModified: return "Date modified"
@@ -40,6 +43,7 @@ public enum FileColumn: String, Sendable, Codable, CaseIterable {
     public var sortKey: FileItemSortKey {
         switch self {
         case .name: return .name
+        case .status: return .status
         case .originalLocation: return .originalLocation
         case .dateDeleted: return .dateDeleted
         case .dateModified: return .dateModified

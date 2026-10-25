@@ -20,8 +20,8 @@ public struct SidebarItem: Sendable, Hashable, Identifiable {
     public var isPinnedFolder: Bool { id.hasPrefix(SidebarTree.pinIDPrefix) }
 }
 
-/// The navigation pane's two-level tree: root items (Home, the Quick access pins, This PC,
-/// Network, Recycle Bin), and — only under This PC — mounted volumes.
+/// The navigation pane's two-level tree: root items (Home, cloud folders, the Quick access
+/// pins, This PC, Network, Recycle Bin), and — only under This PC — mounted volumes.
 public enum SidebarTree {
     private struct WellKnownFolder {
         let title: String
@@ -39,6 +39,8 @@ public enum SidebarTree {
     ]
 
     public static let thisPCID = "this-pc"
+    /// Prefix of the IDs of cloud folders' rows.
+    public static let cloudIDPrefix = "cloud:"
     /// Prefix of the IDs of pinned folders' rows.
     public static let pinIDPrefix = "pin:"
 
@@ -51,8 +53,10 @@ public enum SidebarTree {
         FileManager.default.urls(for: folder.searchPathDirectory, in: .userDomainMask).first?.standardizedFileURL
     }
 
-    /// Title and symbol for a folder: the well-known folders' own, or the folder's name.
+    /// Title and symbol for a folder: the well-known folders' and cloud folders' own, or the
+    /// folder's name.
     public static func appearance(of folder: URL) -> (title: String, symbolName: String) {
+        if let cloud = CloudStorage.root(at: folder) { return (cloud.title, cloud.symbolName) }
         let path = folder.standardizedFileURL.path
         if let known = wellKnownFolders.first(where: { url(of: $0)?.path == path }) {
             return (known.title, known.symbolName)
@@ -63,10 +67,19 @@ public enum SidebarTree {
         return (FileManager.default.displayName(atPath: path), "folder")
     }
 
-    /// Home, the pinned folders (by default the six well-known ones), This PC, Network,
-    /// Recycle Bin — in that order.
-    public static func roots(pinnedFolders: [URL]? = nil) -> [SidebarItem] {
+    /// Home, cloud folders (as Windows 11 puts OneDrive under Home), the pinned folders (by
+    /// default the six well-known ones), This PC, Network, Recycle Bin — in that order.
+    public static func roots(pinnedFolders: [URL]? = nil, cloudRoots: [CloudRoot] = []) -> [SidebarItem] {
         var items = [SidebarItem(id: "home", title: "Home", symbolName: "house", location: .home)]
+
+        for cloud in cloudRoots {
+            items.append(SidebarItem(
+                id: cloudIDPrefix + cloud.url.path,
+                title: cloud.title,
+                symbolName: cloud.symbolName,
+                location: .folder(cloud.url)
+            ))
+        }
 
         for folder in pinnedFolders ?? wellKnownFolderURLs() {
             let appearance = appearance(of: folder)
@@ -92,13 +105,24 @@ public enum SidebarTree {
 
     /// A pin dragged from root index `source` to the gap before root index `target`, as
     /// `QuickAccessStore.movePin` arguments; nil if it would stay put. The pins are roots
-    /// `1...pinCount` (Home comes first), and `target` is clamped to their gaps.
-    public static func pinMove(fromRoot source: Int, toRoot target: Int, pinCount: Int) -> (from: Int, to: Int)? {
-        guard pinCount > 0, (1...pinCount).contains(source) else { return nil }
-        let from = source - 1
-        var destination = min(max(target, 1), pinCount + 1) - 1
+    /// `firstPin..<firstPin + pinCount` (Home and the cloud folders come first), and `target`
+    /// is clamped to their gaps.
+    public static func pinMove(
+        fromRoot source: Int,
+        toRoot target: Int,
+        firstPin: Int = 1,
+        pinCount: Int
+    ) -> (from: Int, to: Int)? {
+        guard pinCount > 0, (firstPin..<firstPin + pinCount).contains(source) else { return nil }
+        let from = source - firstPin
+        var destination = pinGap(nearest: target, firstPin: firstPin, pinCount: pinCount) - firstPin
         if destination > from { destination -= 1 }
         return destination == from ? nil : (from, destination)
+    }
+
+    /// The gap among the pins nearest to the gap before root index `target`.
+    public static func pinGap(nearest target: Int, firstPin: Int, pinCount: Int) -> Int {
+        min(max(target, firstPin), firstPin + pinCount)
     }
 
     /// Children of an expandable root: This PC's volumes; `[]` for everything else.

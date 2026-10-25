@@ -32,6 +32,11 @@ public struct FileItem: Sendable, Hashable, Identifiable {
     public var properties: FileProperties?
     /// The drive, for This PC's items; `nil` elsewhere.
     public var volume: MountedVolume?
+    /// In a cloud folder, whether only a placeholder is on disk (`SF_DATALESS`): reading the
+    /// contents downloads them.
+    public var isOnlineOnly = false
+    /// Sync state, for items in cloud folders; `nil` elsewhere (and for most folders).
+    public var cloudStatus: CloudStatus?
 
     public var id: URL { url }
 
@@ -99,8 +104,15 @@ extension FileItem {
     static let resourceKeySet = Set(resourceKeys)
 
     /// Reads one item's attributes from disk (search results, Home); `nil` if it's gone.
+    /// Items in cloud folders get their quick `CloudStatus`.
     public static func load(_ url: URL) -> FileItem? {
-        try? FileItem(prefetchedURL: url.standardizedFileURL)
+        guard var item = try? FileItem(prefetchedURL: url.standardizedFileURL) else { return nil }
+        if CloudStorage.isInCloudFolder(item.url) {
+            var info = stat()
+            item.isOnlineOnly = lstat(item.url.path, &info) == 0 && info.st_flags & UInt32(SF_DATALESS) != 0
+            item.cloudStatus = CloudStatusReader.quickStatus(of: item)
+        }
+        return item
     }
 
     /// Builds an item from a URL whose resource values were prefetched with `resourceKeys`.

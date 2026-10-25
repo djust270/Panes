@@ -1,10 +1,10 @@
 import AppKit
 import ExplorerCore
 
-/// Navigation pane: Home, the Quick access pins (by default the well-known folders), This PC
-/// (lazily expanded to mounted volumes), Network and the Recycle Bin. Folders and the Recycle
-/// Bin accept drops. Pins follow Quick access changes made anywhere in the app, and are
-/// reordered by dragging.
+/// Navigation pane: Home, cloud folders (OneDrive etc.), the Quick access pins (by default the
+/// well-known folders), This PC (lazily expanded to mounted volumes), Network and the Recycle
+/// Bin. Folders and the Recycle Bin accept drops. Pins follow Quick access changes made
+/// anywhere in the app, and are reordered by dragging.
 @MainActor
 final class NavigationPaneViewController: NSViewController {
     /// A pin being dragged to a new place; holds its row's ID.
@@ -20,9 +20,10 @@ final class NavigationPaneViewController: NSViewController {
     var keyView: NSView { outlineView }
     private let scrollView = NSScrollView()
     private var childrenCache: [String: [SidebarItem]] = [:]
-    private var roots = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)
+    private var roots = NavigationPaneViewController.currentRoots()
     private var quickAccessObserver: NSObjectProtocol?
     private var driveObserver: NSObjectProtocol?
+    private var cloudObserver: NSObjectProtocol?
     /// The location last passed to `select(_:)`, to re-select after the pins change.
     private var selectedLocation: ExplorerLocation?
     /// Set while `select(_:)` is driving the selection programmatically, so
@@ -69,17 +70,19 @@ final class NavigationPaneViewController: NSViewController {
         for root in roots where root.isExpandable {
             outlineView.expandItem(root)
         }
-        quickAccessObserver = QuickAccess.observe { [weak self] in self?.reloadPins() }
+        quickAccessObserver = QuickAccess.observe { [weak self] in self?.reloadRoots() }
         driveObserver = DriveCenter.observe { [weak self] in self?.reloadDrives() }
+        cloudObserver = CloudCenter.observe { [weak self] in self?.reloadRoots() }
     }
 
-    /// Stops following Quick access and drives. Called when the tab closes.
+    /// Stops following Quick access, drives and cloud folders. Called when the tab closes.
     func close() {
-        for observer in [quickAccessObserver, driveObserver].compactMap({ $0 }) {
+        for observer in [quickAccessObserver, driveObserver, cloudObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
         quickAccessObserver = nil
         driveObserver = nil
+        cloudObserver = nil
     }
 
     /// Re-reads This PC's volumes after a mount, unmount or drive-letter change.
@@ -90,9 +93,20 @@ final class NavigationPaneViewController: NSViewController {
         if let selectedLocation { select(selectedLocation) }
     }
 
-    /// Rebuilds the roots if Quick access's pins changed.
-    private func reloadPins() {
-        let updated = SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders)
+    private static func currentRoots() -> [SidebarItem] {
+        SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders, cloudRoots: CloudCenter.roots)
+    }
+
+    /// The root index of the first pin, and how many there are.
+    private var pinRange: (first: Int, count: Int) {
+        let first = roots.firstIndex(where: \.isPinnedFolder)
+            ?? roots.firstIndex(where: { $0.id == SidebarTree.thisPCID }) ?? 1
+        return (first, roots.filter(\.isPinnedFolder).count)
+    }
+
+    /// Rebuilds the roots if Quick access's pins or the cloud folders changed.
+    private func reloadRoots() {
+        let updated = Self.currentRoots()
         guard updated != roots else { return }
         roots = updated
         outlineView.reloadData()
@@ -204,9 +218,10 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
         childIndex index: Int
     ) -> Bool {
         if let id = info.draggingPasteboard.string(forType: Self.pinPasteboardType) {
-            let pinCount = roots.filter(\.isPinnedFolder).count
+            let pins = pinRange
             guard item == nil, let source = roots.firstIndex(where: { $0.id == id }),
-                  let move = SidebarTree.pinMove(fromRoot: source, toRoot: index, pinCount: pinCount) else {
+                  let move = SidebarTree.pinMove(fromRoot: source, toRoot: index, firstPin: pins.first,
+                                                 pinCount: pins.count) else {
                 return false
             }
             QuickAccess.change { $0.movePin(from: move.from, to: move.to) }
@@ -223,7 +238,8 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
     }
 
     /// The gap among the roots where a dragged pin would land: the proposed gap, or above or
-    /// below the root row under the pointer; kept between Home and This PC. Nil over a drive.
+    /// below the root row under the pointer; kept between the cloud folders and This PC. Nil
+    /// over a drive.
     private func pinDropTarget(_ info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> Int? {
         let target: Int
         if let item = item as? SidebarItem {
@@ -236,8 +252,8 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
             guard index != NSOutlineViewDropOnItemIndex else { return nil }
             target = index
         }
-        let pinCount = roots.filter(\.isPinnedFolder).count
-        return min(max(target, 1), pinCount + 1)
+        let pins = pinRange
+        return SidebarTree.pinGap(nearest: target, firstPin: pins.first, pinCount: pins.count)
     }
 
     /// Rows that accept drops: real folders (including volumes) and the Recycle Bin.

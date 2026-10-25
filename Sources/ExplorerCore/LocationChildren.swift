@@ -12,7 +12,10 @@ public enum LocationChildren {
             return subfolders(of: url)
         case .thisPC:
             return VolumeLister.mountedVolumes().map { .folder($0.url.standardizedFileURL) }
-        case .home, .network, .recycleBin, .search:
+        case .home:
+            // Cloud folders (OneDrive etc.) are Home's children in breadcrumbs.
+            return CloudStorage.roots().map { .folder($0.url) }
+        case .network, .recycleBin, .search:
             return []
         }
     }

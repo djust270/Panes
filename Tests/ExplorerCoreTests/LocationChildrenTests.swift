@@ -20,8 +20,8 @@ import Testing
         #expect(children.contains { $0.fileURL?.path == "/" })
     }
 
-    @Test func homeHasNoChildren() {
-        #expect(LocationChildren.of(.home).isEmpty)
+    @Test func homeListsTheCloudFolders() {
+        #expect(LocationChildren.of(.home) == CloudStorage.roots().map { .folder($0.url) })
     }
 
     @Test func nonexistentFolderYieldsEmpty() {

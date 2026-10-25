@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.installEventMonitors()
         DriveCenter.start()
         DriveCenter.reconnectMappedDrives()
+        CloudCenter.start()
         SystemIntegration.start()
         // Launched to open a folder: that's the window, not the start location.
         if windowControllers.isEmpty { openWindow(at: Self.newTabLocation) }

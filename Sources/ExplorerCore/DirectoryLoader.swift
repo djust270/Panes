@@ -16,7 +16,8 @@ public struct DirectoryLoader: Sendable {
         self.options = options
     }
 
-    /// Returns the entries of `directory`, unsorted. Sorting is a view concern.
+    /// Returns the entries of `directory`, unsorted. Sorting is a view concern. In a cloud
+    /// folder, items carry the status the listing tells (`CloudStatusReader.quickStatus`).
     ///
     /// Entries that disappear between listing and stat-ing are skipped silently.
     public func contents(of directory: URL) async throws -> [FileItem] {
@@ -35,11 +36,18 @@ public struct DirectoryLoader: Sendable {
     static func loadSync(_ directory: URL, options: Options) throws -> [FileItem] {
         // Once here, so every item's URL is standardized without paying for it per item.
         let directory = directory.standardizedFileURL
+        var items: [FileItem]
         do {
-            return try BulkDirectoryReader.read(directory, includeHidden: options.includeHidden)
+            items = try BulkDirectoryReader.read(directory, includeHidden: options.includeHidden)
         } catch is BulkDirectoryReader.Unsupported {
-            return try loadWithFileManager(directory, options: options)
+            items = try loadWithFileManager(directory, options: options)
         }
+        if CloudStatusReader.isCloudFolder(directory) {
+            for index in items.indices {
+                items[index].cloudStatus = CloudStatusReader.quickStatus(of: items[index])
+            }
+        }
+        return items
     }
 
     /// Fallback for file systems that reject `getattrlistbulk`.

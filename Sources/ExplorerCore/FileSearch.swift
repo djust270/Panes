@@ -22,12 +22,15 @@ public enum FileSearch {
         return values?.volumeIsLocal == true && values?.volumeIsInternal == true
     }
 
-    /// Like Windows' indexer, Spotlight results leave out app data (~/Library) and, unless
-    /// hidden items are shown, anything in a hidden folder — except when searching inside them.
+    /// Like Windows' indexer, Spotlight results leave out app data (~/Library, apart from cloud
+    /// folders such as OneDrive) and, unless hidden items are shown, anything in a hidden folder —
+    /// except when searching inside them.
     static func isSearchable(_ path: String, in scope: String, includeHidden: Bool) -> Bool {
         guard path.hasPrefix(scope) else { return false }
-        let library = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path + "/Library/"
-        if path.hasPrefix(library), !(scope + "/").hasPrefix(library) { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let library = home + "/Library/"
+        if path.hasPrefix(library), !(scope + "/").hasPrefix(library),
+           !CloudStorage.contains(path, home: home) { return false }
         if !includeHidden {
             let relative = path.dropFirst(scope.count).split(separator: "/").dropLast()
             if relative.contains(where: { $0.hasPrefix(".") }) { return false }
@@ -232,7 +235,7 @@ final class SpotlightSearch {
 /// Services sets when a file is opened), for Home's Recent list.
 public enum SpotlightRecents {
     /// The most recently used files in the home folder over the past `days`, newest first.
-    /// Folders, apps, hidden files and anything in ~/Library are left out.
+    /// Folders, apps, hidden files and anything in ~/Library (apart from cloud folders) are left out.
     @MainActor
     public static func fetch(limit: Int = 40, days: Int = 30) async -> [RecentFile] {
         await RecentsQuery(limit: limit, days: days).run()
@@ -242,7 +245,7 @@ public enum SpotlightRecents {
     static func isUserFile(_ path: String, home: String) -> Bool {
         let components = path.split(separator: "/")
         if components.contains(where: { $0.hasPrefix(".") }) { return false }
-        if path.hasPrefix(home + "/Library/") { return false }
+        if path.hasPrefix(home + "/Library/"), !CloudStorage.contains(path, home: home) { return false }
         // Inside a package (e.g. an app's resources).
         let parents = components.dropLast()
         let packageExtensions: Set<String> = ["app", "bundle", "framework", "photoslibrary", "musiclibrary"]
