@@ -43,6 +43,8 @@ To work in Xcode, open `Package.swift`.
   `NetworkBrowser` (Bonjour) and `SystemIntegration` (folder handler, Services, default file viewer).
 - Phase 7: `FullDiskAccess` and `CrashReport` (ExplorerCore); `FullDiskAccessWindowController`, `LaunchAtLogin`,
   `Updater` (Sparkle), `CrashReporter` and `AppInfo` (ExplorerApp).
+- Cloud storage: `CloudStorage` (ExplorerCore: the OneDrive, iCloud Drive, Google Drive, Dropbox… folders and their
+  names) and `CloudCenter` (ExplorerApp: follows accounts being added or removed).
 - `Tests/ExplorerCoreTests` — Swift Testing suites.
 
 ## Releases

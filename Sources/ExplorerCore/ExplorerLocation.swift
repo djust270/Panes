@@ -24,6 +24,7 @@ public enum ExplorerLocation: Sendable, Hashable {
     public var displayName: String {
         switch self {
         case .folder(let url):
+            if let cloud = CloudStorage.root(at: url) { return cloud.title }
             // Localised name; "/" becomes the boot volume name (e.g. "Macintosh HD").
             return FileManager.default.displayName(atPath: url.path)
         case .home: return "Home"
@@ -43,11 +44,12 @@ public enum ExplorerLocation: Sendable, Hashable {
 
     /// The location reached by "Up" (Alt+↑), or `nil` at the top of the hierarchy.
     ///
-    /// Mirrors Windows: a volume root goes up to This PC; virtual locations other than
-    /// search have no parent.
+    /// Mirrors Windows: a volume root goes up to This PC, a cloud folder (OneDrive etc.) to
+    /// Home; virtual locations other than search have no parent.
     public var parent: ExplorerLocation? {
         switch self {
         case .folder(let url):
+            if CloudStorage.root(at: url) != nil { return .home }
             if Self.isVolumeRoot(url) { return .thisPC }
             return .folder(url.deletingLastPathComponent().standardizedFileURL)
         case .search(_, let scope):

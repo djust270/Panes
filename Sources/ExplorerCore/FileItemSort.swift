@@ -3,6 +3,8 @@ import Foundation
 /// Column a Details-view sort is keyed on.
 public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
     case name
+    /// Cloud folders' sync state.
+    case status
     case dateModified
     case type
     case size
@@ -24,6 +26,7 @@ public enum FileItemSortKey: String, Sendable, Codable, CaseIterable {
     public var title: String {
         switch self {
         case .name: return "Name"
+        case .status: return "Status"
         case .dateModified: return "Date modified"
         case .type: return "Type"
         case .size: return "Size"
@@ -106,6 +109,7 @@ public struct FileItemSort: Sendable, Hashable, Codable {
     private func sortValue(_ item: FileItem) -> SortValue {
         switch key {
         case .name: return .name
+        case .status: return .number(item.cloudStatus.map { Int64($0.rawValue) })
         case .dateModified: return .date(item.dateModified ?? .distantPast)
         case .type: return .text(item.typeDescription as NSString)
         case .size: return .number(item.size)

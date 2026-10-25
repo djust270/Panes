@@ -324,6 +324,7 @@ final class ExplorerTabController: NSViewController {
                     guard !Task.isCancelled else { return }
                     self?.content.setItems(items)
                     self?.updateStatusBar()
+                    try await self?.refineCloudStatus(of: items)
                 } catch is CancellationError {
                     // Superseded by a newer load.
                 } catch {
@@ -340,29 +341,6 @@ final class ExplorerTabController: NSViewController {
             }
             content.setItems(items)
             updateStatusBar()
-        }
-    }
-
-    private func loadRecycleBin() {
-        let includeHidden = loader.options.includeHidden
-        loadTask = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
-                Result { try RecycleBin.contents(includeHidden: includeHidden) }
-            }.value
-            guard !Task.isCancelled, let self else { return }
-            switch result {
-            case .success(let items):
-                content.setItems(items)
-                updateStatusBar()
-            case .failure(is RecycleBin.AccessDenied):
-                content.showUnavailable(
-                    "\(AppInfo.name) needs Full Disk Access to show the Recycle Bin.",
-                    action: Self.fullDiskAccessAction
-                )
-                rootViewController.statusBar.text = ""
-            case .failure(let error):
-                rootViewController.statusBar.text = error.localizedDescription
-            }
         }
     }
 
@@ -473,5 +451,49 @@ final class ExplorerTabController: NSViewController {
         return await withCheckedContinuation { continuation in
             alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
         }
+    }
+}
+
+// MARK: - Recycle Bin
+
+extension ExplorerTabController {
+    fileprivate func loadRecycleBin() {
+        let includeHidden = loader.options.includeHidden
+        loadTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try RecycleBin.contents(includeHidden: includeHidden) }
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            switch result {
+            case .success(let items):
+                content.setItems(items)
+                updateStatusBar()
+            case .failure(is RecycleBin.AccessDenied):
+                content.showUnavailable(
+                    "\(AppInfo.name) needs Full Disk Access to show the Recycle Bin.",
+                    action: Self.fullDiskAccessAction
+                )
+                rootViewController.statusBar.text = ""
+            case .failure(let error):
+                rootViewController.statusBar.text = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Cloud status
+
+extension ExplorerTabController {
+    /// Asks the File Provider about items in a cloud folder that might be syncing (the listing
+    /// only tells online-only from downloaded), and looks again every few seconds while any are:
+    /// uploads finishing don't change the folder, so FSEvents doesn't say.
+    fileprivate func refineCloudStatus(of items: [FileItem]) async throws {
+        guard items.contains(where: { $0.cloudStatus != nil }) else { return }
+        let refined = await Task.detached(priority: .utility) { CloudStatusReader.refined(items) }.value
+        try Task.checkCancellation()
+        if refined != items { content.setItems(refined) }
+        guard refined.contains(where: { $0.cloudStatus == .syncing }) else { return }
+        try await Task.sleep(for: .seconds(3))
+        reload()
     }
 }

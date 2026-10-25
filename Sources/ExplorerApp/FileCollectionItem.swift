@@ -57,6 +57,7 @@ final class FileCollectionItem: NSCollectionViewItem {
         itemView.nameField.stringValue = item.displayName(showingExtensions: AppSettings.showsFileExtensions)
         itemView.setDetails(details)
         itemView.kindDescription = item.typeDescription
+        itemView.cloudStatus = item.cloudStatus
         itemView.alphaValue = isCut ? 0.45 : 1
         itemView.isSelected = isSelected
     }
@@ -95,6 +96,8 @@ final class FileItemView: NSView {
     private let right1 = FileItemView.detailLabel()
     private let right2 = FileItemView.detailLabel()
     private let capacityBar = CapacityBarView()
+    /// The sync-state glyph over the icon's corner, in cloud folders.
+    private let statusBadge = NSImageView()
 
     var viewMode: ViewMode = .mediumIcons {
         didSet {
@@ -109,6 +112,14 @@ final class FileItemView: NSView {
     var showsCheckbox = false { didSet { stateChanged() } }
     /// "Folder", "JPEG image"…: what VoiceOver calls the item.
     var kindDescription = ""
+    var cloudStatus: CloudStatus? {
+        didSet {
+            guard cloudStatus != oldValue else { return }
+            statusBadge.image = cloudStatus.flatMap { CloudStatusGlyph.image(for: $0, pointSize: 10) }
+            statusBadge.toolTip = cloudStatus?.title
+            needsLayout = true
+        }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -124,7 +135,7 @@ final class FileItemView: NSView {
 
     override func accessibilityValue() -> Any? {
         let details = [line2, line3, right1, right2].filter { !$0.isHidden && !$0.stringValue.isEmpty }
-        return details.map(\.stringValue).joined(separator: ", ")
+        return (details.map(\.stringValue) + [cloudStatus?.title].compactMap { $0 }).joined(separator: ", ")
     }
 
     override func isAccessibilitySelected() -> Bool { isSelected }
@@ -136,7 +147,9 @@ final class FileItemView: NSView {
         checkbox.isHidden = true
         checkbox.setAccessibilityLabel("Select")
         capacityBar.isHidden = true
-        for subview in [iconView, nameField, line2, line3, right1, right2, capacityBar, checkbox] {
+        statusBadge.wantsLayer = true
+        statusBadge.imageScaling = .scaleNone
+        for subview in [iconView, statusBadge, nameField, line2, line3, right1, right2, capacityBar, checkbox] {
             addSubview(subview)
         }
         applyFonts()
@@ -240,6 +253,23 @@ final class FileItemView: NSView {
             right1.frame = NSRect(x: split, y: height / 2 - 16, width: max(0, width - split - 8), height: 15)
             right2.frame = NSRect(x: split, y: height / 2 + 1, width: max(0, width - split - 8), height: 15)
         }
+        layoutStatusBadge()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsLayout = true // the badge's background is a layer colour
+    }
+
+    /// Over the bottom-left corner of icons of 32 pt and up; small icons have no room.
+    private func layoutStatusBadge() {
+        statusBadge.isHidden = cloudStatus == nil || iconView.frame.width < 32
+        guard !statusBadge.isHidden else { return }
+        let size: CGFloat = 16
+        let icon = iconView.frame
+        statusBadge.frame = NSRect(x: icon.minX - 2, y: icon.maxY - size + 2, width: size, height: size)
+        statusBadge.layer?.cornerRadius = size / 2
+        statusBadge.layer?.backgroundColor = Theme.paneColor.cgColor
     }
 
     override func draw(_ dirtyRect: NSRect) {

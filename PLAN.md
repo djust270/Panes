@@ -333,6 +333,109 @@ not Windows 98 Explorer's layout.
   every tab's views after a switch). Checked with window snapshots in both styles, light and dark, switching
   back and forth; the Windows 11 render is unchanged.
 
+## Cloud storage (~5–6 weeks)
+OneDrive, iCloud Drive, Dropbox, Google Drive, Box and any other File Provider sync client, shown as Windows shows
+OneDrive: a root in the navigation pane, a Status column, "Always keep on this device" / "Free up space".
+
+**Approach:** build on the providers' own sync clients, not their web APIs. Each client already syncs to a real
+folder (`~/Library/CloudStorage/<Provider>-<Account>`; iCloud Drive at `~/Library/Mobile Documents/com~apple~CloudDocs`),
+so the loader, watcher and operation engine work there unchanged. The work is recognising those folders, showing
+their sync state, and never downloading files by accident. No sign-in, no app registrations, one code path for every
+provider; per-provider code is limited to names and icons. Web APIs (Microsoft Graph etc.) are only an optional
+later stage, for sharing.
+
+**Already in the way:**
+- `FileSearch.isSearchable` and `isUserFile` leave out everything under `~/Library/`, which holds both
+  `CloudStorage` and `Mobile Documents`: cloud files never appear in search results or Recent.
+- Thumbnails (`ThumbnailProvider`), `FilePropertiesReader` (dimensions, duration) and the `ContentTotals` walk can
+  make a provider download online-only files; Large icons on a big cloud folder could pull gigabytes.
+- `ExplorerLocation.parent` / `ancestry` would show "Macintosh HD › Users › … › CloudStorage › OneDrive-Personal".
+- Free to fix: `BulkDirectoryReader` already reads `ATTR_CMN_FLAGS`, which carries `SF_DATALESS` (online-only).
+
+### Stage 0 — Spike (done 2026-10-25, OneDrive for Business on macOS 15.7)
+1. **Download / Free up space work** from an unsandboxed app: `startDownloadingUbiquitousItem` downloaded a
+   9 KB file in ~1 s, `evictUbiquitousItem` made it online-only again.
+2. **Status keys are filled in:** `isUbiquitousItem` (true for the root and everything in it), downloading
+   status (`notDownloaded` / `current`), is uploaded / uploading / downloading, conflicts, errors. Reading them costs
+   ~1 ms per item (100 items: 80–120 ms), so never for a whole big folder on the main thread. `SF_DATALESS` matches
+   "not downloaded" for files and costs nothing (already in the bulk read). A folder reports `current` once its
+   listing has been fetched, even if everything in it is online-only: a folder's own status says nothing about its
+   contents.
+3. **Pinning can't be done or seen by other apps.** OneDrive's "Always Keep on This Device" is its own File Provider
+   action (`com.microsoft.OneDrive.FileProviderActions.MarkPinned`), shown only in Finder's menu; a pinned item has
+   content policy 3 (download eagerly, keep downloaded) and a "Pinned" decoration, neither exposed to clients
+   (`fileproviderctl evaluate` shows them). Setting macOS 15's `com.apple.fileprovider.pinned#PX` xattr does nothing
+   for OneDrive. So: "Download now" and "Free up space", no pinned state.
+4. **Thumbnails are safe:** `QLThumbnailGenerator` on an online-only file asks the provider for a thumbnail
+   ("Could not download a thumbnail for cloud item" for an .xlsx) and doesn't download the file.
+5. **`displayName(atPath:)` gives the raw folder name** ("OneDrive-JustGeeks"), so the naming table is needed. The
+   root's `com.apple.file-provider-domain-id` xattr holds the provider and its own name
+   (`com.microsoft.OneDrive-mac.FileProvider/OneDrive - JustGeeks`).
+6. **Spotlight indexes OneDrive**, online-only files included: search can keep using it.
+- Listing a folder (even `ls -R`) makes the provider fetch listings from the network, without downloading files:
+  recursive walks (folder sizes, walked searches) are slow in cloud folders but don't fill the disk.
+- `FilePropertiesReader` falls back to reading image headers, which downloads online-only pictures: guard it.
+  Quick Look previews (preview pane) download the file, as on Windows.
+
+### Stage 1 — Navigation (~1–1.5 weeks)
+- [x] `CloudStorage` (ExplorerCore): lists the cloud roots under an injectable base folder. Provider table maps
+      folder names to titles and icons: `OneDrive-Personal` → "OneDrive - Personal", `OneDrive-<Org>` →
+      "OneDrive - <Org>", `OneDrive-SharedLibraries-<Org>` → "<Org>" (SharePoint, its own root as on Windows),
+      `GoogleDrive-<email>` → "Google Drive (<email>)", `Dropbox` → "Dropbox", `Box-Box` → "Box", iCloud Drive →
+      "iCloud Drive". Unknown providers fall back to `displayName(atPath:)` and a generic cloud icon.
+- [x] Navigation pane: one root per cloud folder between Home and the pins (Windows 11's order); `CloudCenter`
+      watches `CloudStorage` (and re-reads on activation, for iCloud Drive) so roots come and go when accounts are
+      added or removed. Pin reordering skips them.
+- [ ] Cloud roots expandable into their folders (needs the pane to become a real tree, listed off the main thread:
+      a cloud folder's first listing can wait on the network).
+- [x] `ExplorerLocation`: a cloud root is the top of its hierarchy (parent `.home`, its display name), so the
+      breadcrumb reads "Home › OneDrive - Personal › Documents"; Home's chevron lists the cloud folders; the
+      editable path stays the real one.
+- [x] Search and Recent: cloud folders inside `~/Library/` are no longer left out.
+- [x] Cloud roots can be pinned to Quick access (with their cloud title and icon).
+
+**Status:** checked in the app with this Mac's iCloud Drive (navigation pane, breadcrumb, Home's chevron; no
+errors in the log). No File Provider client is installed, so `CloudStorage` roots, and `CloudCenter` noticing a new
+account, are covered only by unit tests (fake `CloudStorage` folder).
+
+### Stage 2 — Sync status (~1.5 weeks)
+- [x] `CloudStatus` on `FileItem`: available on this device, available when online, sync pending, sync problem
+      (no "always available": providers don't expose pinning, see the spike). `FileItem.isOnlineOnly` comes from
+      `SF_DATALESS` in the bulk read; in a cloud folder (a cloud path, or `isUbiquitousItem`: Desktop and Documents
+      in iCloud) `DirectoryLoader` gives files their status from that alone. The tab then asks the File Provider
+      (~1 ms each, off the main thread) only about items with local contents, the only ones that can be syncing, and
+      reloads every 3 s while any are (finished uploads don't touch the folder, so FSEvents is silent). Folders show
+      only syncing and problems: their own state says nothing about their contents. Search results and Home get the
+      listing's status (`FileItem.load`).
+- [x] `FileColumn.status`: icons only, as on Windows (blue cloud, green check, blue arrows, red cross) with the
+      wording as tooltip and VoiceOver label; Status follows Name by default in cloud folders, sortable. A badge on
+      the icon's corner in icon, Tiles and Content views (icons of 32 pt and up). Same SF Symbols in the Windows 98
+      style, which doesn't restyle icons.
+- [x] No accidental downloads: `FilePropertiesReader` doesn't read online-only pictures' headers. Thumbnails need no
+      guard (the spike). Checked on OneDrive: Details and Large icons over 62 online-only files downloaded none,
+      and OneDrive's own thumbnails (videos, PDFs, documents) show.
+- [ ] Size on disk 0 for online-only files in Properties (Stage 3, with the Status row).
+- [ ] Not seen yet: the syncing and problem glyphs (needs a file uploading into OneDrive).
+
+### Stage 3 — Commands (~1 week)
+- [ ] "Download now" (`startDownloadingUbiquitousItem`) and "Free up space" (`evictUbiquitousItem`) in the context
+      menu, command bar and Windows 98 menus, for items in cloud folders only. No "Always keep on this device": the
+      spike found no way for another app to set or read OneDrive's pin.
+- [ ] Properties › General: Status, and size on disk.
+- [ ] Opening or copying an online-only file downloads it first: the progress dialog says "Downloading from
+      <provider>…", the speed graph copes with the wait, and cancel stops the download.
+- [ ] Deleting from a cloud folder deletes it in the cloud and on other devices; say so in the confirmation.
+
+### Stage 4 — Optional: Microsoft Graph for OneDrive (~2–3 weeks, separate decision)
+Share (links, permissions), View online, Version history, Home's "Shared with me" / "Recommended". Needs an Entra ID
+app registration, MSAL or OAuth PKCE via `ASWebAuthenticationSession`, and tokens in the keychain. Other providers'
+APIs are out of scope.
+
+**Tests:** unit tests for root discovery and naming (fake `CloudStorage` tree), flags/keys → `CloudStatus`,
+`parent` / `ancestry` of cloud roots, `isSearchable` / `isUserFile` with cloud paths, sorting by status; the
+env-gated self-test for the Status column and menu items. By hand, per installed provider: browse 1,000+ online-only
+files in Large icons without downloads, Free up space / Keep, copy in and out, cancel mid-download.
+
 ---
 
 ## Risks
@@ -340,5 +443,8 @@ not Windows 98 Explorer's layout.
 2. **TCC / Full Disk Access** — without it, Mail, Safari data, other users' folders etc. are blocked; onboarding must handle this gracefully.
 3. **Trademarks** — don't use "Windows" or Microsoft logos in the app name/icon. Fluent System Icons are fine; Segoe and Windows shell icons are not.
 4. **File operations on network / external volumes** — SMB/exFAT quirks (no xattrs, case-insensitivity, partial copies). Budget extra testing time for the operation engine.
+5. **Cloud providers** — pinning ("Always keep on this device") has no public client API (confirmed for OneDrive),
+   leaving "Download now"; per-item sync status is a daemon call (~1 ms), so it's only read for items with local
+   contents; provider names (OneDrive, Dropbox…) are used descriptively only, never their logos.
 
 **Rough total:** 18–22 weeks for one experienced macOS developer. Usable MVP (Phases 0–2 + Details view + tabs) in ~7–8 weeks.
