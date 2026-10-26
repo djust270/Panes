@@ -89,6 +89,9 @@ public enum FileOperationText {
             return "Renaming \(items)"
         case .createFolder(let folder, _), .createFile(let folder, _):
             return "Creating \(items) in \(name(folder))"
+        case .download(let urls):
+            let provider = urls.first.flatMap(CloudSync.providerName(for:)) ?? sourceFolder ?? ""
+            return "Downloading \(items) from \(provider)"
         }
     }
 

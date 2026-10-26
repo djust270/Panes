@@ -13,7 +13,12 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "FileProviderBridge",
+            linkerSettings: [.linkedFramework("FileProvider")]
+        ),
+        .target(
             name: "ExplorerCore",
+            dependencies: ["FileProviderBridge"],
             linkerSettings: [.linkedFramework("CoreServices")]
         ),
         .executableTarget(

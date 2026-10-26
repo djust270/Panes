@@ -19,6 +19,8 @@ public enum FileOperationRequest: Sendable, Hashable {
     case createFolder(in: URL, name: String)
     /// Creates an empty file named `name`, or "name (2).ext" etc. if that is taken.
     case createFile(in: URL, name: String)
+    /// Downloads the online-only files among items in cloud folders, and in folders among them.
+    case download([URL])
 }
 
 /// One item's move to an exact destination path.
@@ -46,13 +48,14 @@ extension FileOperationRequest {
         case .rename: return "Rename"
         case .createFolder: return "New Folder"
         case .createFile: return "New File"
+        case .download: return "Download"
         }
     }
 
     /// The items the request acts on, before it runs.
     public var sourceURLs: [URL] {
         switch self {
-        case .copy(let urls, _), .move(let urls, _), .trash(let urls), .delete(let urls):
+        case .copy(let urls, _), .move(let urls, _), .trash(let urls), .delete(let urls), .download(let urls):
             return urls
         case .relocate(let relocations):
             return relocations.map(\.source)
@@ -189,6 +192,8 @@ public struct FileOperationProgress: Sendable, Hashable {
     public var completedBytes: Int64 = 0
     /// Name of the item being processed.
     public var currentName: String?
+    /// While a copy waits for an online-only file to download: where from ("OneDrive - Contoso").
+    public var downloadingFrom: String?
 
     public init() {}
 
@@ -247,6 +252,14 @@ public struct FileOperationEnvironment: Sendable {
     public var trash: @Sendable (URL) throws -> URL
     /// Testing hook: treat every move as crossing volumes (copy, then delete the source).
     var forcesCrossVolumeMoves = false
+    /// Online-only files in cloud folders: whether a file is one, asking its sync client for
+    /// it, why it couldn't come, and stopping it (`CloudSync`).
+    var isOnlineOnly: @Sendable (URL) -> Bool = { CloudSync.isOnlineOnly($0) }
+    var startDownloading: @Sendable (URL) throws -> Void = { try CloudSync.startDownloading($0) }
+    var downloadError: @Sendable (URL) -> Error? = { CloudSync.downloadError($0) }
+    var stopDownloading: @Sendable (URL) -> Void = { try? CloudSync.freeUpSpace($0) }
+    /// Whether an item can't be moved to the Trash for being online-only (`CloudSync`).
+    var hasOnlineOnlyContents: @Sendable (URL) -> Bool = { CloudSync.hasOnlineOnlyContents($0) }
 
     public init(trash: @escaping @Sendable (URL) throws -> URL) {
         self.trash = trash

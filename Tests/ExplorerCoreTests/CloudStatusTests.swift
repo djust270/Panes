@@ -5,15 +5,22 @@ import Testing
 @Suite struct CloudStatusTests {
     private func status(
         folder: Bool = false, onlineOnly: Bool = false, uploaded: Bool = true, transferring: Bool = false,
-        problem: Bool = false
+        problem: Bool = false, pinned: Bool = false
     ) -> CloudStatus? {
         CloudStatusReader.status(isFolder: folder, isOnlineOnly: onlineOnly, isUploaded: uploaded,
-                                 isTransferring: transferring, hasProblem: problem)
+                                 isTransferring: transferring, hasProblem: problem, isPinned: { pinned })
     }
 
     @Test func filesAreOnlineOnlyOrOnThisDevice() {
         #expect(status(onlineOnly: true) == .onlineOnly)
         #expect(status() == .availableOnDevice)
+    }
+
+    @Test func pinnedFilesAreAlwaysAvailable() {
+        #expect(status(pinned: true) == .alwaysAvailable)
+        #expect(status(onlineOnly: true, pinned: true) == .onlineOnly)
+        #expect(status(transferring: true, pinned: true) == .syncing)
+        #expect(status(folder: true, pinned: true) == nil)
     }
 
     @Test func syncingAndProblemsOutrankAvailability() {

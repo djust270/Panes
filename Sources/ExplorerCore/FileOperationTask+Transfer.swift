@@ -383,6 +383,9 @@ extension FileOperationTask {
 
         let copied = try attempt(node.source) {
             progress.completedBytes = baseBytes
+            // An online-only file would download while copyfile waits, with no progress and
+            // no way to cancel: download it first.
+            try downloadIfOnlineOnly(node.source, reportingProvider: true)
             try FileCopier.copy(from: node.source, to: target) { [self] bytes in
                 if bytes >= 0 {
                     progress.completedBytes = baseBytes + bytes

@@ -44,7 +44,8 @@ To work in Xcode, open `Package.swift`.
 - Phase 7: `FullDiskAccess` and `CrashReport` (ExplorerCore); `FullDiskAccessWindowController`, `LaunchAtLogin`,
   `Updater` (Sparkle), `CrashReporter` and `AppInfo` (ExplorerApp).
 - Cloud storage: `CloudStorage` (ExplorerCore: the OneDrive, iCloud Drive, Google Drive, Dropbox… folders and their
-  names) and `CloudCenter` (ExplorerApp: follows accounts being added or removed).
+  names), `CloudSync` (ExplorerCore: download, free up space) and `CloudCenter` (ExplorerApp: follows accounts being
+  added or removed; opens online-only files after downloading them).
 - `Tests/ExplorerCoreTests` — Swift Testing suites.
 
 ## Releases

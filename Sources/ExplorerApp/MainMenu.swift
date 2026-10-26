@@ -72,6 +72,10 @@ enum MainMenu {
         menu.add("Extract All…", #selector(ExplorerTabController.extractAll(_:)), modifiers: [])
         menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
         menu.addItem(.separator())
+        menu.add("Download Now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
+        menu.add("Free Up Space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.delegate = FileMenuDelegate.shared
         menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties,
                  alternates: true)
         menu.addItem(.separator())
@@ -294,5 +298,26 @@ extension NSMenu {
         let detached = items
         removeAllItems()
         return detached
+    }
+}
+
+/// Adds the selection's cloud provider commands (OneDrive's Share, View online…) after Free Up
+/// Space each time the File menu opens: they depend on the provider and the items. Not in
+/// `menuNeedsUpdate`, which also runs when looking for key equivalents.
+@MainActor
+private final class FileMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = FileMenuDelegate()
+
+    func menuWillOpen(_ menu: NSMenu) {
+        let perform = #selector(ExplorerTabController.performProviderAction(_:))
+        menu.items.filter { $0.action == perform }.forEach(menu.removeItem)
+        guard let tab = NSApp.target(forAction: perform) as? ExplorerTabController,
+              let anchor = menu.items.firstIndex(where: {
+                  $0.action == #selector(ExplorerTabController.freeUpSpace(_:))
+              })
+        else { return }
+        for (offset, item) in tab.providerActionItems().enumerated() {
+            menu.insertItem(item, at: anchor + 1 + offset)
+        }
     }
 }

@@ -80,6 +80,8 @@ public final class FileOperationTask: @unchecked Sendable, Identifiable {
                 runCreate(in: folder, name: name, directory: true)
             case .createFile(let folder, let name):
                 runCreate(in: folder, name: name, directory: false)
+            case .download(let urls):
+                try runDownload(urls)
             }
         } catch {
             result.wasCancelled = true
@@ -162,6 +164,9 @@ public final class FileOperationTask: @unchecked Sendable, Identifiable {
 
     // MARK: Trash and delete
 
+    /// Moves `urls` to the Trash, except cloud items without their contents (online-only
+    /// files, folders holding any): the system can't move those to the Trash, so they're
+    /// deleted outright, as Windows sends them to the provider's online recycle bin.
     private func runTrash(_ urls: [URL]) throws {
         progress.totalItems = urls.count
         progress.phase = .running
@@ -175,6 +180,11 @@ public final class FileOperationTask: @unchecked Sendable, Identifiable {
             try checkpoint()
             progress.currentName = url.lastPathComponent
             report()
+            if environment.hasOnlineOnlyContents(url) {
+                _ = try attempt(url) { try FileManager.default.removeItem(at: url) }
+                progress.completedItems += 1
+                continue
+            }
             var destination: URL?
             if try attempt(url, { destination = try environment.trash(url) }), let destination {
                 trashed.append(Relocation(source: url, destination: destination))

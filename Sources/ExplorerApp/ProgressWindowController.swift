@@ -277,12 +277,19 @@ final class OperationProgressView: NSView {
     func update(_ progress: FileOperationProgress) {
         self.progress = progress
         let now = ProcessInfo.processInfo.systemUptime
-        if progress.phase == .running, !task.isPaused {
+        // While a copy waits for a download nothing moves: hold the speed and time remaining
+        // rather than showing them fall to nothing. The first sample afterwards spans the wait.
+        let downloading = progress.downloadingFrom
+        if progress.phase == .running, !task.isPaused, downloading == nil {
             let done = progress.totalBytes > 0 ? progress.completedBytes : Int64(progress.completedItems)
             meter.record(bytes: done, at: now)
         }
 
-        summaryLabel.stringValue = task.isCancelled ? "Cancelling…" : summary
+        if task.isCancelled {
+            summaryLabel.stringValue = "Cancelling…"
+        } else {
+            summaryLabel.stringValue = downloading.map { "Downloading from \($0)…" } ?? summary
+        }
         percentLabel.stringValue = titleText
         progressBar.doubleValue = progress.fractionCompleted
 

@@ -34,6 +34,10 @@ final class ExplorerTabController: NSViewController {
     var isSearchRunning = false
     /// The search found more than `FileSearch.resultLimit` items.
     var isSearchTruncated = false
+    /// Whether the folder shown is synced: a cloud folder, or Desktop and Documents in iCloud.
+    private(set) var showsCloudFolder = false
+    /// Items "Download now" is downloading, shown as syncing until it's done.
+    var cloudDownloads: Set<URL> = []
 
     var content: ContentViewController { rootViewController.content }
     var addressBar: AddressBarView { rootViewController.addressBar }
@@ -266,6 +270,7 @@ final class ExplorerTabController: NSViewController {
     }
 
     private func show(_ location: ExplorerLocation) {
+        showsCloudFolder = location.fileURL.map(CloudStatusReader.isCloudFolder) ?? false
         title = location.displayName
         icon = Self.icon(for: location)
         host?.tabDidChangeTitle(self)
@@ -478,22 +483,5 @@ extension ExplorerTabController {
                 rootViewController.statusBar.text = error.localizedDescription
             }
         }
-    }
-}
-
-// MARK: - Cloud status
-
-extension ExplorerTabController {
-    /// Asks the File Provider about items in a cloud folder that might be syncing (the listing
-    /// only tells online-only from downloaded), and looks again every few seconds while any are:
-    /// uploads finishing don't change the folder, so FSEvents doesn't say.
-    fileprivate func refineCloudStatus(of items: [FileItem]) async throws {
-        guard items.contains(where: { $0.cloudStatus != nil }) else { return }
-        let refined = await Task.detached(priority: .utility) { CloudStatusReader.refined(items) }.value
-        try Task.checkCancellation()
-        if refined != items { content.setItems(refined) }
-        guard refined.contains(where: { $0.cloudStatus == .syncing }) else { return }
-        try await Task.sleep(for: .seconds(3))
-        reload()
     }
 }

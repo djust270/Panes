@@ -16,10 +16,7 @@ extension ContentViewController {
             onNavigate?(.folder(only.url))
             return
         }
-        let files = selected.filter { !$0.isFolder }.map(\.url)
-        for file in files {
-            NSWorkspace.shared.open(file)
-        }
+        CloudCenter.open(selected.filter { !$0.isFolder }.map(\.url))
         // Apps and other packages aren't "recent files".
         QuickAccess.recordOpen(of: selected.filter { $0.kind == .file }.map(\.url))
     }
