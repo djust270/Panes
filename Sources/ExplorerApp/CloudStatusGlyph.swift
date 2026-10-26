@@ -1,13 +1,14 @@
 import AppKit
 import ExplorerCore
 
-/// Windows' sync-state glyphs: a blue cloud (online-only), a green check (on this device),
-/// blue arrows (syncing), a red cross (a problem).
+/// Windows' sync-state glyphs: a blue cloud (online-only), a green check (on this device), a
+/// solid green check (always on this device), blue arrows (syncing), a red cross (a problem).
 @MainActor
 enum CloudStatusGlyph {
     static func image(for status: CloudStatus, pointSize: CGFloat = 12) -> NSImage? {
         let (symbol, color): (String, NSColor) = switch status {
         case .onlineOnly: ("cloud", .systemBlue)
+        case .alwaysAvailable: ("checkmark.circle.fill", .systemGreen)
         case .availableOnDevice: ("checkmark.circle", .systemGreen)
         case .syncing: ("arrow.triangle.2.circlepath", .systemBlue)
         case .error: ("xmark.circle.fill", .systemRed)

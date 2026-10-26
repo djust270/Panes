@@ -1,9 +1,9 @@
 import Foundation
 
 /// An item's sync state in a cloud folder (OneDrive, iCloud Drive…): the Status column.
-///
-/// "Always available on this device" (pinned) isn't here: providers keep it to themselves.
 public enum CloudStatus: Int, Sendable, Hashable, CaseIterable {
+    /// Pinned: "Always keep on this device".
+    case alwaysAvailable
     case availableOnDevice
     case onlineOnly
     case syncing
@@ -12,6 +12,7 @@ public enum CloudStatus: Int, Sendable, Hashable, CaseIterable {
     /// As Windows words it.
     public var title: String {
         switch self {
+        case .alwaysAvailable: return "Always available on this device"
         case .availableOnDevice: return "Available on this device"
         case .onlineOnly: return "Available when online"
         case .syncing: return "Sync pending"
@@ -21,8 +22,8 @@ public enum CloudStatus: Int, Sendable, Hashable, CaseIterable {
 }
 
 /// Reads `CloudStatus`. The listing gives most of it for free (`FileItem.isOnlineOnly`);
-/// syncing and errors need the File Provider's view of the item, ~1 ms each, so only items that
-/// can be syncing (those with local contents) are asked, off the main thread.
+/// syncing, errors and pinning need the File Provider's view of the item, ~2 ms each, so only
+/// items that can have them (those with local contents) are asked, off the main thread.
 public enum CloudStatusReader {
     private static let keys: Set<URLResourceKey> = [
         .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey, .ubiquitousItemIsDownloadingKey,
@@ -43,7 +44,8 @@ public enum CloudStatusReader {
         return item.isOnlineOnly ? .onlineOnly : .availableOnDevice
     }
 
-    /// Whether `read` could tell more than `quickStatus`: online-only items can't be syncing.
+    /// Whether `read` could tell more than `quickStatus`: online-only items can't be syncing or
+    /// pinned.
     public static func needsReading(_ item: FileItem) -> Bool {
         !item.isOnlineOnly && item.kind != .symlink
     }
@@ -53,13 +55,16 @@ public enum CloudStatusReader {
         var url = item.url
         url.removeAllCachedResourceValues()
         guard let values = try? url.resourceValues(forKeys: keys) else { return quickStatus(of: item) }
+        let provider = ProviderActions.state(of: item.url)
         return status(
             isFolder: item.isFolder,
             isOnlineOnly: item.isOnlineOnly,
             isUploaded: values.ubiquitousItemIsUploaded ?? true,
-            isTransferring: values.ubiquitousItemIsUploading == true || values.ubiquitousItemIsDownloading == true,
+            isTransferring: values.ubiquitousItemIsUploading == true || values.ubiquitousItemIsDownloading == true
+                || provider?.isSyncing == true,
             hasProblem: values.ubiquitousItemHasUnresolvedConflicts == true
-                || values.ubiquitousItemUploadingError != nil || values.ubiquitousItemDownloadingError != nil
+                || values.ubiquitousItemUploadingError != nil || values.ubiquitousItemDownloadingError != nil,
+            isPinned: { provider?.isPinned == true }
         )
     }
 
@@ -78,11 +83,13 @@ public enum CloudStatusReader {
         isOnlineOnly: Bool,
         isUploaded: Bool,
         isTransferring: Bool,
-        hasProblem: Bool
+        hasProblem: Bool,
+        isPinned: () -> Bool = { false }
     ) -> CloudStatus? {
         if hasProblem { return .error }
         if isTransferring || !isUploaded { return .syncing }
         if isFolder { return nil }
-        return isOnlineOnly ? .onlineOnly : .availableOnDevice
+        if isOnlineOnly { return .onlineOnly }
+        return isPinned() ? .alwaysAvailable : .availableOnDevice
     }
 }

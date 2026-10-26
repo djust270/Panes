@@ -341,8 +341,9 @@ OneDrive: a root in the navigation pane, a Status column, "Always keep on this d
 folder (`~/Library/CloudStorage/<Provider>-<Account>`; iCloud Drive at `~/Library/Mobile Documents/com~apple~CloudDocs`),
 so the loader, watcher and operation engine work there unchanged. The work is recognising those folders, showing
 their sync state, and never downloading files by accident. No sign-in, no app registrations, one code path for every
-provider; per-provider code is limited to names and icons. Web APIs (Microsoft Graph etc.) are only an optional
-later stage, for sharing.
+provider; per-provider code is limited to names and icons. Sharing, View online, Version history and pinning come
+from the providers' own File Provider actions (Stage 4); web APIs (Microsoft Graph) are only an optional later
+stage, for Home.
 
 **Already in the way:**
 - `FileSearch.isSearchable` and `isUserFile` leave out everything under `~/Library/`, which holds both
@@ -365,7 +366,8 @@ later stage, for sharing.
    action (`com.microsoft.OneDrive.FileProviderActions.MarkPinned`), shown only in Finder's menu; a pinned item has
    content policy 3 (download eagerly, keep downloaded) and a "Pinned" decoration, neither exposed to clients
    (`fileproviderctl evaluate` shows them). Setting macOS 15's `com.apple.fileprovider.pinned#PX` xattr does nothing
-   for OneDrive. So: "Download now" and "Free up space", no pinned state.
+   for OneDrive. So: "Download now" and "Free up space", no pinned state. *Superseded by Stage 4's spike: the action
+   and both values are reachable through private FileProvider.framework classes, as Finder reaches them.*
 4. **Thumbnails are safe:** `QLThumbnailGenerator` on an online-only file asks the provider for a thumbnail
    ("Could not download a thumbnail for cloud item" for an .xlsx) and doesn't download the file.
 5. **`displayName(atPath:)` gives the raw folder name** ("OneDrive-JustGeeks"), so the naming table is needed. The
@@ -443,10 +445,74 @@ delete warning (cancelled), and copying a 104 MB online-only video out of OneDri
 partial copy, the video online-only again. Deleting: a downloaded file went to the Trash as a full copy; an
 online-only one was deleted in 0.35 s after the warning. Engine behaviour is unit-tested against a fake sync client.
 
-### Stage 4 — Optional: Microsoft Graph for OneDrive (~2–3 weeks, separate decision)
-Share (links, permissions), View online, Version history, Home's "Shared with me" / "Recommended". Needs an Entra ID
-app registration, MSAL or OAuth PKCE via `ASWebAuthenticationSession`, and tokens in the keychain. Other providers'
-APIs are out of scope.
+### Stage 4 — Provider actions (~1.5–2 weeks)
+Share, Copy link, View online, Version history and "Always keep on this device" as Finder does them: by running the
+provider's own File Provider actions. No Graph, no sign-in, no app registration, and it works for every provider that
+declares actions, each in its own wording.
+
+**Spike (2026-10-26, OneDrive for Business, macOS 15.7, unsandboxed command-line tool):**
+1. **Finder doesn't implement these.** The provider's extension declares them in its `Info.plist`
+   (`NSExtensionFileProviderActions`: identifier, localized-name key, `NSPredicate` activation rule). OneDrive's:
+   `MarkPinned` "Always Keep on This Device", `MarkUnpinned` "Free Up Space", `ShareLink` "Share", `CopyLink` "Copy
+   Link", `ViewOnline`, `VersionHistory`, `CheckOut` / `CheckIn`, `AskCopilot`, `Unmount` "Remove Shortcut",
+   `PrioritizeSync`, `Reactivate`, plus two debug actions (hidden by their rules). Names live in the extension's
+   `Localizable.strings`.
+2. **Finder runs them through private FileProvider.framework classes, and so can we:**
+   `FPItemManager.defaultManager` → `itemForURL:error:` (an `FPItem`) → `FPVendorDefinedActionOperation`
+   `initWithActionIdentifier:providerDomainID:itemIdentifiers:` (the item's `providerDomainID` and `itemIdentifier`),
+   `setActionCompletionBlock:`, `FPItemManager addOperation:`. Completes at once, without an error; the provider does
+   the work afterwards. `eligibleActionsForItems:` lists only system actions (Copy, Move, Rename…), not vendor ones.
+3. **The activation rules can be evaluated ourselves:** `FPItem.userInfo` carries the provider's flags (`showShare`,
+   `showViewOnline`, `showVersionHistory`, `showPinUnpin`, `showCheckOut`…), the same ones Finder's menu uses.
+4. **Results:** Copy link put a `https://<tenant>-my.sharepoint.com/:t:/g/personal/…` link on the clipboard ~4 s
+   after the call (the org's default link type, as in Finder). Share opened OneDrive's share window. Pinning an
+   online-only file downloaded it at once: content policy 1 → 3 and OneDrive's `Pinned` decoration. While pinned,
+   `evictUbiquitousItem` fails (`NSFileProviderErrorDomain` -2008, "cannot be evicted").
+5. **Pinned state is readable:** `FPItem.decorations` (`…FileProviderBadges.Pinned` / `.Syncing` / `.Shared`) and
+   `contentPolicy`; `itemForURL:` costs ~1 ms per item (99 items: 78–106 ms), like the public status keys. Prefer the
+   decoration: folders report content policy 3 without being pinned.
+6. **The provider's extension is found from the domain:** `FPProviderDomain providerDomainForURL:error:` →
+   `extensionBundleURL`, `localizedName` ("OneDrive").
+  View online opened the file in the browser.
+- **Unpinning sticks, in Finder too (OneDrive 26.168.0830):** after `MarkUnpinned` the item shows `Syncing`, keeps
+  policy 3 and still can't be evicted, for minutes, until OneDrive is restarted. Finder's "Free Up Space" on a
+  cleanly pinned file does the same, so it's OneDrive's bug, not our call: we behave as Finder does.
+- Not identified: the OneDrive window Version history opened. Not tried: several items at once (`itemIdentifiers`
+  takes an array), Check out / in, other providers.
+
+**Tasks:**
+- [x] `FileProviderBridge`, a small Objective-C target: the private classes looked up by name, every method
+      checked before use, ARC knowing the alloc/init and out-parameter semantics, and no Objective-C exception let
+      through (a provider's malformed rule would otherwise crash `NSPredicate`). Missing classes → no provider
+      actions, never a crash.
+- [x] `ProviderActions` (ExplorerCore): a domain's declared actions and names from its extension bundle (cached per
+      extension; debug actions left out), each rule evaluated against the real items (`fileproviderItems`) and the
+      domain's `domainUserInfo`, as Finder does; `perform` runs one on the selection. A role (pin / unpin / other)
+      told from the identifier. Unit-tested with OneDrive's declarations, a fake extension bundle and fake items.
+- [x] Menus: both context menus, the command bar's ⋯ and the File menu (rebuilt in `menuWillOpen`, not
+      `menuNeedsUpdate`, which also runs for key equivalents) list the selection's eligible actions after Download
+      now / Free up space, in the provider's order and wording. Its unpin ("Free Up Space") isn't listed: our Free up
+      space runs it. ~10–14 ms for one OneDrive item.
+- [x] `CloudStatus.alwaysAvailable` (solid green check) from content policy 3 or a `Pinned` badge, and the provider's
+      `Syncing` badge counted as syncing (so a stuck unpin shows as Finder shows it), read in Stage 2's off-main pass:
+      one more ~1 ms lookup per item with local contents.
+- [x] Free up space on a pinned item: eviction fails as `nonEvictable`, so the provider's unpin runs instead.
+- [x] Download now / Free up space stay ours, also for providers that declare no actions (iCloud Drive).
+- [ ] Not done, on purpose: "Always keep on this device" as a checked toggle (OneDrive's rule offers pin whatever the
+      state, as Finder does; the Status column shows it), and Share in Windows 11's icon row (still the macOS share
+      sheet) running the provider's Share.
+
+**Status:** checked in the app on OneDrive for Business with a temporary self-test hook (removed): the menu items
+(Always Keep on This Device, Share, Copy Link, Version History, View Online), the File menu's, Copy link putting a
+SharePoint link on the clipboard, pinning a file (status → always available), Free up space on it running
+OneDrive's unpin without an error (status → syncing, OneDrive's bug), no errors in the log.
+
+### Stage 5 — Optional: Microsoft Graph for Home (separate decision)
+Only Home's "Shared with me" / "Recommended" still need a web API. Graph's `drive/sharedWithMe` and `drive/recent`
+are deprecated and stop returning data in November 2026, so it would be the Search API or `/me/insights`
+(`shared`, `used`). Needs an Entra ID app registration (multi-tenant needs publisher verification), OAuth PKCE via
+`ASWebAuthenticationSession` (or MSAL, for Conditional Access device compliance), and tokens in the keychain. Other
+providers' APIs are out of scope.
 
 **Tests:** unit tests for root discovery and naming (fake `CloudStorage` tree), flags/keys → `CloudStatus`,
 `parent` / `ancestry` of cloud roots, `isSearchable` / `isUserFile` with cloud paths, sorting by status; the
@@ -460,8 +526,10 @@ files in Large icons without downloads, Free up space / Keep, copy in and out, c
 2. **TCC / Full Disk Access** — without it, Mail, Safari data, other users' folders etc. are blocked; onboarding must handle this gracefully.
 3. **Trademarks** — don't use "Windows" or Microsoft logos in the app name/icon. Fluent System Icons are fine; Segoe and Windows shell icons are not.
 4. **File operations on network / external volumes** — SMB/exFAT quirks (no xattrs, case-insensitivity, partial copies). Budget extra testing time for the operation engine.
-5. **Cloud providers** — pinning ("Always keep on this device") has no public client API (confirmed for OneDrive),
-   leaving "Download now"; per-item sync status is a daemon call (~1 ms), so it's only read for items with local
-   contents; provider names (OneDrive, Dropbox…) are used descriptively only, never their logos.
+5. **Cloud providers** — pinning, sharing and the other provider actions have no public client API: they go through
+   private FileProvider.framework classes, as Finder's menu does (Stage 4), which a macOS update could change or
+   lock down; they must disappear quietly, leaving Download now / Free up space. Per-item sync status is a daemon
+   call (~1 ms), so it's only read for items with local contents; provider names (OneDrive, Dropbox…) are used
+   descriptively only, never their logos.
 
 **Rough total:** 18–22 weeks for one experienced macOS developer. Usable MVP (Phases 0–2 + Details view + tabs) in ~7–8 weeks.

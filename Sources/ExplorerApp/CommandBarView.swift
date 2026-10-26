@@ -171,12 +171,15 @@ final class CommandBarView: NSView {
     }
 
     private func moreItems() -> [NSMenuItem] {
-        Self.moreItems(inCloud: target?.selectionIsInCloud == true)
+        Self.moreItems(
+            inCloud: target?.selectionIsInCloud == true,
+            providerItems: target?.providerActionItems() ?? []
+        )
     }
 
-    /// ⋯: Undo, selection, Copy as path, Download now and Free up space (in cloud folders),
-    /// folder view options and Settings.
-    private static func moreItems(inCloud: Bool) -> [NSMenuItem] {
+    /// ⋯: Undo, selection, Copy as path, Download now, Free up space and the provider's commands
+    /// (in cloud folders), folder view options and Settings.
+    private static func moreItems(inCloud: Bool, providerItems: [NSMenuItem]) -> [NSMenuItem] {
         let menu = NSMenu()
         menu.add("Undo", Selector(("undo:")), command: .undo)
         menu.add("Redo", Selector(("redo:")), command: .redo)
@@ -193,6 +196,7 @@ final class CommandBarView: NSView {
             menu.addItem(.separator())
             menu.add("Download now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
             menu.add("Free up space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+            providerItems.forEach(menu.addItem)
         }
         menu.addItem(.separator())
         menu.add("Apply view to all folders", #selector(ExplorerTabController.applyViewToAllFolders(_:)), modifiers: [])

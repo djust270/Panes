@@ -2,7 +2,8 @@ import AppKit
 import ExplorerCore
 
 /// Cloud folders (OneDrive, iCloud Drive…): sync status, "Download now" and "Free up space",
-/// and the warning that deleting there deletes in the cloud too.
+/// the provider's own commands (Share, View online, Always keep on this device…), and the
+/// warning that deleting there deletes in the cloud too.
 extension ExplorerTabController {
     // MARK: Status
 
@@ -27,8 +28,7 @@ extension ExplorerTabController {
     // MARK: Commands
 
     /// "Download now": downloads the selected online-only files, and everything in selected
-    /// folders, with the progress dialog. No "Always keep on this device": sync clients don't
-    /// let other apps set it.
+    /// folders, with the progress dialog.
     @objc func downloadNow(_ sender: Any?) {
         let urls = selectedURLs
         guard !urls.isEmpty else { return }
@@ -44,18 +44,48 @@ extension ExplorerTabController {
     }
 
     /// "Free up space": keeps only placeholders of the selected items, downloaded again when
-    /// opened.
+    /// opened. Pinned items go through the provider's own unpin, which may finish later.
     @objc func freeUpSpace(_ sender: Any?) {
         let urls = selectedURLs
         guard !urls.isEmpty else { return }
         Task {
-            let failures = await Task.detached(priority: .userInitiated) { CloudSync.freeUpSpace(urls) }.value
+            let failures = await Task.detached(priority: .userInitiated) { await CloudSync.freeUpSpace(urls) }.value
             if currentFolder != nil { reload() }
             guard let first = failures.first else { return }
             let message = failures.count == 1
                 ? "Couldn’t free up space for “\(first.url.lastPathComponent)”."
                 : "Couldn’t free up space for \(failures.count) items."
             await inform("\(message) \(first.error.localizedDescription)")
+        }
+    }
+
+    /// Runs the provider command a menu item carries (`providerActionItems`) on the selection.
+    @objc func performProviderAction(_ sender: Any?) {
+        guard let action = (sender as? NSMenuItem)?.representedObject as? ProviderAction else { return }
+        let urls = selectedURLs
+        guard !urls.isEmpty else { return }
+        Task {
+            do {
+                try await ProviderActions.perform(action, on: urls)
+            } catch {
+                await inform("Couldn’t \(action.title.lowercased()): \(error.localizedDescription)")
+                return
+            }
+            // Pinning downloads and changes the status; the listing shows it when it's done.
+            guard currentFolder != nil, action.role != .other else { return }
+            reload()
+        }
+    }
+
+    /// The selection's provider commands, as Finder shows them: the ones the provider's rules
+    /// allow, in its order and wording. Its unpin, which OneDrive calls "Free Up Space", is
+    /// left to our Free up space (which runs it for pinned items).
+    func providerActionItems() -> [NSMenuItem] {
+        guard selectionIsInCloud else { return [] }
+        return ProviderActions.actions(for: selectedURLs).filter { $0.role != .unpin }.map { action in
+            let item = NSMenuItem(title: action.title, action: #selector(performProviderAction(_:)), keyEquivalent: "")
+            item.representedObject = action
+            return item
         }
     }
 
@@ -77,6 +107,8 @@ extension ExplorerTabController {
             return selectionIsInCloud && selection.contains { $0.isFolder || $0.isOnlineOnly }
         case #selector(freeUpSpace(_:)):
             return selectionIsInCloud && selection.contains { $0.isFolder || !$0.isOnlineOnly }
+        case #selector(performProviderAction(_:)):
+            return selectionIsInCloud
         default:
             return nil
         }

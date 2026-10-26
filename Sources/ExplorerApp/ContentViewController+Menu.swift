@@ -240,12 +240,13 @@ extension ContentViewController: NSMenuDelegate {
         if menu.numberOfItems > before { menu.addItem(.separator()) }
     }
 
-    /// In cloud folders, OneDrive's "Download now" (Windows: "Always keep on this device",
-    /// which sync clients don't let other apps set) and "Free up space".
+    /// In cloud folders, "Download now" and "Free up space", then the provider's own commands
+    /// (OneDrive: Always keep on this device, Share, Copy link, Version history, View online).
     private func addCloudItems(to menu: NSMenu) {
-        guard (dropHandler as? ExplorerTabController)?.selectionIsInCloud == true else { return }
+        guard let tab = dropHandler as? ExplorerTabController, tab.selectionIsInCloud else { return }
         menu.add("Download now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
         menu.add("Free up space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+        tab.providerActionItems().forEach(menu.addItem)
         menu.addItem(.separator())
     }
 

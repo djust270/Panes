@@ -1,4 +1,5 @@
 import Darwin
+import FileProvider
 import Foundation
 
 /// "Download now" and "Free up space": asks a cloud folder's sync client (any File Provider
@@ -50,16 +51,34 @@ public enum CloudSync {
         try FileManager.default.evictUbiquitousItem(at: url)
     }
 
-    /// Frees up space for each of `urls`, returning those that failed. Can take a while for
-    /// folders: call off the main thread.
-    public static func freeUpSpace(_ urls: [URL]) -> [(url: URL, error: Error)] {
-        urls.compactMap { url in
+    /// Frees up space for each of `urls`, returning those that failed. Pinned items ("Always
+    /// keep on this device") can't be evicted: the provider's own unpin frees them, as Finder's
+    /// "Free Up Space" does. Can take a while for folders: call off the main thread.
+    public static func freeUpSpace(_ urls: [URL]) async -> [(url: URL, error: Error)] {
+        var failures: [(url: URL, error: Error)] = []
+        for url in urls {
             do {
                 try freeUpSpace(url)
-                return nil
+            } catch where isNonEvictable(error) {
+                do {
+                    if try await !ProviderActions.unpin(url) { failures.append((url, error)) }
+                } catch {
+                    failures.append((url, error))
+                }
             } catch {
-                return (url, error)
+                failures.append((url, error))
             }
+        }
+        return failures
+    }
+
+    /// Whether eviction failed because the item is pinned (`NSFileProviderError.nonEvictable`,
+    /// wrapped in a Cocoa error).
+    static func isNonEvictable(_ error: Error) -> Bool {
+        let error = error as NSError
+        let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        return [error, underlying].contains {
+            $0?.domain == NSFileProviderErrorDomain && $0?.code == NSFileProviderError.Code.nonEvictable.rawValue
         }
     }
 
