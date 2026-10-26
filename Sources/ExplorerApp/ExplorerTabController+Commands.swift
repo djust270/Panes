@@ -66,8 +66,7 @@ extension ExplorerTabController {
     }
 
     private func open(_ files: [URL], with app: URL) {
-        let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(files, withApplicationAt: app, configuration: configuration, completionHandler: nil)
+        CloudCenter.open(files, withApplicationAt: app)
     }
 
     /// The apps that can open every one of `files`: the default app, and the others by name.

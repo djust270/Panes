@@ -46,6 +46,19 @@ import Testing
                                    iCloudDriveFolder: temp.path("missing")).isEmpty)
     }
 
+    @Test func findsTheRootAnItemIsIn() {
+        let documents = cloudRoot("OneDrive-Contoso").appendingPathComponent("Documents/report.docx")
+        #expect(CloudStorage.root(containing: documents)?.title == "OneDrive - Contoso")
+        #expect(CloudStorage.root(containing: documents)?.url == cloudRoot("OneDrive-Contoso").standardizedFileURL)
+        #expect(CloudStorage.root(containing: cloudRoot("Dropbox"))?.title == "Dropbox")
+        let iCloudFile = CloudStorage.iCloudDriveFolder.appendingPathComponent("Notes/a.txt")
+        #expect(CloudStorage.root(containing: iCloudFile)?.provider == .iCloudDrive)
+        #expect(CloudStorage.root(containing: CloudStorage.iCloudDriveFolder)?.provider == .iCloudDrive)
+        #expect(CloudStorage.root(containing: CloudStorage.fileProviderFolder) == nil)
+        #expect(CloudStorage.root(containing: cloudRoot(".hidden").appendingPathComponent("a")) == nil)
+        #expect(CloudStorage.root(containing: home.appendingPathComponent("Documents")) == nil)
+    }
+
     @Test func recognisesRootsByPath() {
         #expect(CloudStorage.root(at: cloudRoot("OneDrive-Personal"))?.title == "OneDrive - Personal")
         #expect(CloudStorage.root(at: CloudStorage.iCloudDriveFolder)?.provider == .iCloudDrive)

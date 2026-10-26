@@ -65,7 +65,7 @@ final class CommandBarView: NSView {
         sortButton.dropDownMenu = makeMenu { MainMenu.sortItems() + [.separator(), MainMenu.groupBySubmenuItem()] }
         viewButton.dropDownMenu = makeMenu { MainMenu.viewModeItems() + [.separator()] + Self.showItems() }
         filterButton.dropDownMenu = makeMenu { MainMenu.filterItems() }
-        moreButton.dropDownMenu = makeMenu { Self.moreItems() }
+        moreButton.dropDownMenu = makeMenu { [weak self] in self?.moreItems() ?? [] }
         for button in [newButton, sortButton, viewButton, filterButton] {
             button.showsMenuIndicator = true
         }
@@ -170,8 +170,13 @@ final class CommandBarView: NSView {
         return [compact, showItem]
     }
 
-    /// ⋯: Undo, selection, Copy as path, folder view options and Settings.
-    private static func moreItems() -> [NSMenuItem] {
+    private func moreItems() -> [NSMenuItem] {
+        Self.moreItems(inCloud: target?.selectionIsInCloud == true)
+    }
+
+    /// ⋯: Undo, selection, Copy as path, Download now and Free up space (in cloud folders),
+    /// folder view options and Settings.
+    private static func moreItems(inCloud: Bool) -> [NSMenuItem] {
         let menu = NSMenu()
         menu.add("Undo", Selector(("undo:")), command: .undo)
         menu.add("Redo", Selector(("redo:")), command: .redo)
@@ -184,6 +189,11 @@ final class CommandBarView: NSView {
         menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
         menu.add("Extract all", #selector(ExplorerTabController.extractAll(_:)), modifiers: [])
         menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
+        if inCloud {
+            menu.addItem(.separator())
+            menu.add("Download now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
+            menu.add("Free up space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+        }
         menu.addItem(.separator())
         menu.add("Apply view to all folders", #selector(ExplorerTabController.applyViewToAllFolders(_:)), modifiers: [])
         menu.add("Reset all folders…", #selector(ExplorerTabController.resetAllFolders(_:)), modifiers: [])

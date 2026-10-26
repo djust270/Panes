@@ -115,6 +115,7 @@ extension ExplorerTabController {
 
     private func trash(_ urls: [URL]) {
         Task {
+            guard await confirmCloudDelete(of: urls) else { return }
             let result = await perform(.trash(urls))
             let unrecyclable = result.failures.filter { $0.reason == .trashUnavailable }.map(\.url)
             guard !unrecyclable.isEmpty else { return }
@@ -193,7 +194,12 @@ extension ExplorerTabController {
         let message = urls.count == 1
             ? "Are you sure you want to permanently delete “\(urls[0].lastPathComponent)”?"
             : "Are you sure you want to permanently delete these \(urls.count) items?"
-        return await confirm(message, detail: "You can’t undo this action.", button: "Delete")
+        var detail = "You can’t undo this action."
+        if let provider = cloudProvider(of: urls) {
+            let them = urls.count == 1 ? "It" : "They"
+            detail = "\(them) will also be deleted from \(provider) and from all your devices. " + detail
+        }
+        return await confirm(message, detail: detail, button: "Delete")
     }
 }
 
@@ -227,7 +233,8 @@ extension ExplorerTabController: NSMenuItemValidation {
             return inRecycleBin && !content.allItems.isEmpty
         default:
             return validateViewMenuItem(menuItem) ?? validateCommandMenuItem(menuItem)
-                ?? validateSearchMenuItem(menuItem) ?? validateToolsMenuItem(menuItem) ?? true
+                ?? validateSearchMenuItem(menuItem) ?? validateToolsMenuItem(menuItem)
+                ?? validateCloudMenuItem(menuItem) ?? true
         }
     }
 }

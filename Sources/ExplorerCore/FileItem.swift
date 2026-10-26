@@ -108,8 +108,7 @@ extension FileItem {
     public static func load(_ url: URL) -> FileItem? {
         guard var item = try? FileItem(prefetchedURL: url.standardizedFileURL) else { return nil }
         if CloudStorage.isInCloudFolder(item.url) {
-            var info = stat()
-            item.isOnlineOnly = lstat(item.url.path, &info) == 0 && info.st_flags & UInt32(SF_DATALESS) != 0
+            item.isOnlineOnly = CloudSync.isOnlineOnly(item.url)
             item.cloudStatus = CloudStatusReader.quickStatus(of: item)
         }
         return item

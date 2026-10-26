@@ -414,17 +414,34 @@ account, are covered only by unit tests (fake `CloudStorage` folder).
 - [x] No accidental downloads: `FilePropertiesReader` doesn't read online-only pictures' headers. Thumbnails need no
       guard (the spike). Checked on OneDrive: Details and Large icons over 62 online-only files downloaded none,
       and OneDrive's own thumbnails (videos, PDFs, documents) show.
-- [ ] Size on disk 0 for online-only files in Properties (Stage 3, with the Status row).
+- [x] Size on disk 0 for online-only files in Properties: already so (`totalFileAllocatedSize` is 0 for them).
 - [ ] Not seen yet: the syncing and problem glyphs (needs a file uploading into OneDrive).
 
 ### Stage 3 — Commands (~1 week)
-- [ ] "Download now" (`startDownloadingUbiquitousItem`) and "Free up space" (`evictUbiquitousItem`) in the context
-      menu, command bar and Windows 98 menus, for items in cloud folders only. No "Always keep on this device": the
-      spike found no way for another app to set or read OneDrive's pin.
-- [ ] Properties › General: Status, and size on disk.
-- [ ] Opening or copying an online-only file downloads it first: the progress dialog says "Downloading from
-      <provider>…", the speed graph copes with the wait, and cancel stops the download.
-- [ ] Deleting from a cloud folder deletes it in the cloud and on other devices; say so in the confirmation.
+- [x] "Download now" and "Free up space" (`CloudSync`) in both context menus, the command bar's ⋯ and File menu,
+      shown for items in cloud folders only. No "Always keep on this device": the spike found no way for another app
+      to set or read OneDrive's pin. Download now is a file operation (`.download`): it asks for every online-only
+      file (inside folders too) at once, then waits on each, with the progress dialog; the items show as syncing
+      meanwhile. Free up space evicts each item (a folder: everything in it) off the main thread.
+- [x] Properties › General: Status (glyph and wording) for files, and folders while syncing.
+- [x] Opening or copying an online-only file downloads it first: opening runs `.download` before the app is
+      launched; a copy downloads each online-only source before `copyfile`, polling `SF_DATALESS` every 0.1 s. The
+      dialog says "Downloading from <provider>…" and holds speed and time remaining meanwhile; cancel evicts the file,
+      which stops the download.
+- [x] Deleting from a cloud folder: "Deleted files are removed everywhere", naming the provider, until "Don't show
+      this again"; the permanent-delete confirmation says so too.
+- [x] Online-only items (and folders holding any) are deleted outright, not moved to the Trash: `trashItem` on an
+      online-only OneDrive file failed at once from a command-line tool and never returned in the app (20 s+, the
+      File Provider holding it). So `.trash` deletes them (`CloudSync.hasOnlineOnlyContents`, cloud items only,
+      without listing online-only folders), as Windows sends them to the online recycle bin; no undo for them. The
+      warning then always shows, without "Don't show this again", saying they can't be restored from the Recycle
+      Bin. Downloaded files still go to the Trash as a full local copy.
+
+**Status:** checked in the app on OneDrive for Business: Download now / Free up space on an online-only file
+(syncing glyph while downloading, then on this device; online-only again after), Properties for both states, the
+delete warning (cancelled), and copying a 104 MB online-only video out of OneDrive, cancelled mid-download: no
+partial copy, the video online-only again. Deleting: a downloaded file went to the Trash as a full copy; an
+online-only one was deleted in 0.35 s after the warning. Engine behaviour is unit-tested against a fake sync client.
 
 ### Stage 4 — Optional: Microsoft Graph for OneDrive (~2–3 weeks, separate decision)
 Share (links, permissions), View online, Version history, Home's "Shared with me" / "Recommended". Needs an Entra ID

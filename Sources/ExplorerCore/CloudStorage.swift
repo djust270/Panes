@@ -92,6 +92,23 @@ public enum CloudStorage {
         return root(named: url.lastPathComponent, at: url)
     }
 
+    /// The cloud root `url` is in (or is).
+    public static func root(containing url: URL) -> CloudRoot? {
+        root(containing: url, fileProviderFolder: fileProviderFolder, iCloudDriveFolder: iCloudDriveFolder)
+    }
+
+    static func root(containing url: URL, fileProviderFolder: URL, iCloudDriveFolder: URL) -> CloudRoot? {
+        let path = url.standardizedFileURL.path
+        if path == iCloudDriveFolder.path || path.hasPrefix(iCloudDriveFolder.path + "/") {
+            return iCloudDrive(at: iCloudDriveFolder)
+        }
+        let prefix = fileProviderFolder.path + "/"
+        guard path.hasPrefix(prefix),
+              let name = path.dropFirst(prefix.count).split(separator: "/").first,
+              !name.hasPrefix(".") else { return nil }
+        return root(named: String(name), at: fileProviderFolder.appendingPathComponent(String(name), isDirectory: true))
+    }
+
     /// Whether `url` is a cloud folder or inside one.
     public static func isInCloudFolder(_ url: URL) -> Bool {
         let path = url.standardizedFileURL.path

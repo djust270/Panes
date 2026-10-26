@@ -65,6 +65,7 @@ enum AppSettings {
         static let dualPane = "DualPane"
         static let crashReports = "OfferCrashReports"
         static let classicContextMenu = "ClassicContextMenu"
+        static let cloudDeleteWarning = "WarnBeforeCloudDelete"
     }
 
     /// Read by colour providers off the main thread (`Theme.isClassic`).
@@ -149,6 +150,13 @@ enum AppSettings {
     static var offersCrashReports: Bool {
         get { defaults.object(forKey: Key.crashReports) as? Bool ?? true }
         set { set(newValue, for: Key.crashReports) }
+    }
+
+    /// Warn that deleting from a cloud folder deletes in the cloud too, until "Don't show this
+    /// again" (on by default).
+    static var warnsBeforeCloudDelete: Bool {
+        get { defaults.object(forKey: Key.cloudDeleteWarning) as? Bool ?? true }
+        set { set(newValue, for: Key.cloudDeleteWarning) }
     }
 
     /// Updates from the beta channel as well as stable releases.

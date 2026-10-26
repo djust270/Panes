@@ -72,6 +72,9 @@ enum MainMenu {
         menu.add("Extract All…", #selector(ExplorerTabController.extractAll(_:)), modifiers: [])
         menu.add("Open in Terminal", #selector(ExplorerTabController.openInTerminal(_:)), modifiers: [])
         menu.addItem(.separator())
+        menu.add("Download Now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
+        menu.add("Free Up Space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+        menu.addItem(.separator())
         menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties,
                  alternates: true)
         menu.addItem(.separator())

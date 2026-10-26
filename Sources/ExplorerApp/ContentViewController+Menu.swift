@@ -139,6 +139,7 @@ extension ContentViewController: NSMenuDelegate {
         addOpenCommands(to: menu, hasFolders: hasFolders, files: files)
         menu.addItem(.separator())
         addQuickAccessItems(to: menu)
+        addCloudItems(to: menu)
         if mode == .folder {
             menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
         }
@@ -154,6 +155,7 @@ extension ContentViewController: NSMenuDelegate {
         addOpenCommands(to: menu, hasFolders: hasFolders, files: files)
         menu.addItem(.separator())
         addQuickAccessItems(to: menu)
+        addCloudItems(to: menu)
         menu.add("Share", #selector(ExplorerTabController.shareSelection(_:)), modifiers: [])
         if mode == .folder {
             menu.add("Compress to ZIP file", #selector(ExplorerTabController.compressSelection(_:)), modifiers: [])
@@ -236,6 +238,15 @@ extension ContentViewController: NSMenuDelegate {
             menu.add("Remove from Recent", #selector(ExplorerTabController.removeFromRecent(_:)), modifiers: [])
         }
         if menu.numberOfItems > before { menu.addItem(.separator()) }
+    }
+
+    /// In cloud folders, OneDrive's "Download now" (Windows: "Always keep on this device",
+    /// which sync clients don't let other apps set) and "Free up space".
+    private func addCloudItems(to menu: NSMenu) {
+        guard (dropHandler as? ExplorerTabController)?.selectionIsInCloud == true else { return }
+        menu.add("Download now", #selector(ExplorerTabController.downloadNow(_:)), modifiers: [])
+        menu.add("Free up space", #selector(ExplorerTabController.freeUpSpace(_:)), modifiers: [])
+        menu.addItem(.separator())
     }
 
     /// Windows' background menu starts with View ▸, Sort by ▸, Group by ▸ and Refresh.

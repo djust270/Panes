@@ -3,8 +3,8 @@ import ExplorerCore
 import UniformTypeIdentifiers
 
 /// The Properties dialog's General tab. For files and folders: name, type, "Opens with",
-/// location, size and size on disk (counted as you watch, for folders), dates and the
-/// Read-only and Hidden attributes. For a drive: type, file system, used and free space and a
+/// location, size and size on disk (counted as you watch, for folders), sync status in cloud
+/// folders, dates and the Read-only and Hidden attributes. For a drive: type, file system, used and free space and a
 /// capacity chart.
 @MainActor
 final class PropertiesGeneralView: NSView, NSTextFieldDelegate {
@@ -64,6 +64,9 @@ final class PropertiesGeneralView: NSView, NSTextFieldDelegate {
         rows.append(("Size:", sizeValue))
         rows.append(("Size on disk:", diskValue))
         if isFolder { rows.append(("Contains:", containsValue)) }
+        if let item, let status = Self.cloudStatus(of: item) {
+            rows.append(("Status:", Self.statusRow(status)))
+        }
         rows.append((nil, PropertiesLayout.separator()))
         rows.append(("Created:", PropertiesLayout.value(item?.dateCreated.map(dateFormatter.string) ?? "")))
         rows.append(("Modified:", PropertiesLayout.value(item?.dateModified.map(dateFormatter.string) ?? "")))
@@ -86,6 +89,22 @@ final class PropertiesGeneralView: NSView, NSTextFieldDelegate {
             (nil, PropertiesLayout.separator()),
             ("Attributes:", makeAttributeRow()),
         ]
+    }
+
+    /// The item's sync state, in cloud folders; folders have one only while syncing.
+    private static func cloudStatus(of item: FileItem) -> CloudStatus? {
+        guard CloudStatusReader.isCloudFolder(item.url.deletingLastPathComponent()) else { return nil }
+        var item = item
+        item.isOnlineOnly = CloudSync.isOnlineOnly(item.url)
+        return CloudStatusReader.read(item)
+    }
+
+    /// The Status column's glyph and its wording.
+    private static func statusRow(_ status: CloudStatus) -> NSView {
+        let glyph = NSImageView(image: CloudStatusGlyph.image(for: status) ?? NSImage())
+        let row = NSStackView(views: [glyph, PropertiesLayout.value(status.title)])
+        row.spacing = 6
+        return row
     }
 
     /// "3 Files, 2 Folders" — what's selected, not what's inside.

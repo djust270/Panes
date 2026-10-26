@@ -142,6 +142,7 @@ final class FileOperationCenter {
         case .trash, .delete: verb = "delete"
         case .rename: verb = "rename"
         case .createFolder, .createFile: verb = "create"
+        case .download: verb = "download"
         }
         return "Couldn’t \(verb) “\(item)”"
     }
