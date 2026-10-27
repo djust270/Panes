@@ -162,6 +162,10 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.add("Refresh", #selector(ExplorerTabController.refresh(_:)), command: .refresh, alternates: true)
         menu.addItem(.separator())
+        menu.add("Zoom In", #selector(AppDelegate.zoomIn(_:)), command: .zoomIn, alternates: true)
+        menu.add("Zoom Out", #selector(AppDelegate.zoomOut(_:)), command: .zoomOut, alternates: true)
+        menu.add("Actual Size", #selector(AppDelegate.actualSize(_:)), command: .actualSize, alternates: true)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Enter Full Screen",
                      action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]

@@ -479,20 +479,6 @@ final class ContentViewController: NSViewController {
         onSelectionChange?()
     }
 
-    /// Re-applies theme settings (row heights, colours, fonts) after they change.
-    func applyTheme() {
-        guard isViewLoaded else { return }
-        tableView.rowHeight = Theme.detailsRowHeight
-        collectionView.backgroundColors = [Theme.paneColor]
-        tableView.backgroundColor = Theme.paneColor
-        if isDetailsMode {
-            tableView.reloadData()
-            setSelection(selectedURLs, scroll: false)
-        } else {
-            reconfigureVisibleItems()
-        }
-    }
-
     // MARK: Properties
 
     /// `items` with tags, dimensions and duration filled in from the cache; starts reading
@@ -533,6 +519,42 @@ final class ContentViewController: NSViewController {
                 propertiesCache[item.url] = (item.dateModified, properties)
             }
             refreshContent()
+        }
+    }
+}
+
+// MARK: - Theme and zoom
+
+extension ContentViewController {
+    /// Re-applies theme settings (row heights, colours, fonts, zoom) after they change.
+    func applyTheme() {
+        guard isViewLoaded else { return }
+        tableView.rowHeight = Theme.detailsRowHeight
+        collectionView.backgroundColors = [Theme.paneColor]
+        tableView.backgroundColor = Theme.paneColor
+        if let layout = collectionView.collectionViewLayout as? FileCollectionLayout, layout.zoom != Theme.zoom {
+            applyColumnWidths()
+            // New item sizes, and group headers that pick up the new font.
+            collectionView.collectionViewLayout = FileCollectionLayout(
+                viewMode: layout.viewMode,
+                isGrouped: layout.isGrouped,
+                isHome: layout.isHome
+            )
+            if isDetailsMode {
+                collectionNeedsReload = true
+            } else {
+                let selection = selectedURLs
+                collectionView.reloadData()
+                collectionNeedsReload = false
+                setSelection(selection, scroll: false)
+                return
+            }
+        }
+        if isDetailsMode {
+            tableView.reloadData()
+            setSelection(selectedURLs, scroll: false)
+        } else {
+            reconfigureVisibleItems()
         }
     }
 }

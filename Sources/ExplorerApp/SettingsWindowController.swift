@@ -147,6 +147,7 @@ private struct ViewSettings: View {
     @State private var accent = AppSettings.accent
     @State private var captionButtons = AppSettings.windowsCaptionButtons
     @State private var compactView = AppSettings.compactView
+    @State private var textZoom = AppSettings.textZoom
     @State private var classicMenu = AppSettings.classicContextMenu
     @State private var hiddenFiles = AppSettings.showsHiddenFiles
     @State private var fileExtensions = AppSettings.showsFileExtensions
@@ -172,6 +173,11 @@ private struct ViewSettings: View {
                 Toggle("Window buttons on the right (Windows style)",
                        isOn: bind($captionButtons) { AppSettings.windowsCaptionButtons = $0 })
                 Toggle("Compact view", isOn: bind($compactView) { AppSettings.compactView = $0 })
+                Picker("Zoom:", selection: bind($textZoom) { AppSettings.textZoom = $0 }) {
+                    ForEach(TextZoom.levels, id: \.self) { Text(TextZoom.title(for: $0)).tag($0) }
+                }
+                Caption("The size of the file list and navigation pane. View › Zoom In and Zoom Out "
+                        + "(+ and -) change it too.")
                 Toggle("Classic context menu (Windows 10 style)",
                        isOn: bind($classicMenu) { AppSettings.classicContextMenu = $0 })
                 Caption("Shows every command when you right-click, without “Show more options”. "
@@ -192,6 +198,7 @@ private struct ViewSettings: View {
             accent = AppSettings.accent
             captionButtons = AppSettings.windowsCaptionButtons
             compactView = AppSettings.compactView
+            textZoom = AppSettings.textZoom
             classicMenu = AppSettings.classicContextMenu
             hiddenFiles = AppSettings.showsHiddenFiles
             fileExtensions = AppSettings.showsFileExtensions

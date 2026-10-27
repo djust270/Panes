@@ -83,6 +83,7 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .nextPane: return [.init(.f6)]
         case .previousPane: return [.init(.f6, .shift)]
         case .viewMode(let index): return (1...8).contains(index) ? [.init("\(index)", [.control, .shift])] : []
+        case .zoomIn, .zoomOut, .actualSize: return zoomShortcuts(for: command, ctrl)
         }
     }
 
@@ -125,6 +126,22 @@ public enum KeyboardScheme: String, Sendable, CaseIterable, Codable {
         case .nextPane: return [.init(.f6)]
         case .previousPane: return [.init(.f6, .shift)]
         case .viewMode(let index): return (1...8).contains(index) ? [.init("\(index)", cmd)] : []
+        case .zoomIn, .zoomOut, .actualSize: return zoomShortcuts(for: command, cmd)
+        }
+    }
+
+    /// Ctrl or ⌘ with + / - / 0, as in browsers. Zoom In shows as "+", and also answers to "="
+    /// (the same key unshifted) and Shift+"=": the key monitor matches by unshifted key and exact
+    /// modifiers. The keypad's + and - arrive as themselves.
+    private static func zoomShortcuts(
+        for command: ExplorerCommand,
+        _ modifier: KeyShortcut.Modifiers
+    ) -> [KeyShortcut] {
+        switch command {
+        case .zoomIn: return [.init("+", modifier), .init("=", modifier), .init("=", modifier.union(.shift))]
+        case .zoomOut: return [.init("-", modifier)]
+        case .actualSize: return [.init("0", modifier)]
+        default: return []
         }
     }
 }
@@ -144,6 +161,8 @@ public enum ExplorerCommand: Hashable, Sendable {
     case nextPane, previousPane
     /// Layout 1…8, in `ViewMode.allCases` order.
     case viewMode(Int)
+    /// The file list's and navigation pane's zoom (`TextZoom`).
+    case zoomIn, zoomOut, actualSize
 
     public static var allCases: [ExplorerCommand] {
         [
@@ -152,6 +171,7 @@ public enum ExplorerCommand: Hashable, Sendable {
             .rename, .delete, .deletePermanently, .selectAll, .selectNone, .invertSelection,
             .back, .forward, .up, .refresh, .focusAddressBar, .search,
             .previewPane, .detailsPane, .navigationPane, .hiddenFiles, .nextPane, .previousPane,
+            .zoomIn, .zoomOut, .actualSize,
         ] + (1...9).map(ExplorerCommand.selectTab) + (1...8).map(ExplorerCommand.viewMode)
     }
 }

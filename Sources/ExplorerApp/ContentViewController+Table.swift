@@ -2,7 +2,8 @@ import AppKit
 import ExplorerCore
 
 /// The Details view: one table column per `FileColumn`, shown, hidden and ordered from the
-/// folder's settings. Group headers are full-width group rows. Column widths are app-wide.
+/// folder's settings. Group headers are full-width group rows. Column widths are app-wide,
+/// stored at 100% and shown at the current zoom.
 extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
     private static let columnWidthsKey = "DetailsColumnWidths"
 
@@ -38,16 +39,28 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         tableView.headerView?.menu = makeHeaderMenu()
         configureDragAndDrop()
 
-        let widths = UserDefaults.standard.dictionary(forKey: Self.columnWidthsKey) as? [String: Double] ?? [:]
         for column in FileColumn.allCases {
             let tableColumn = NSTableColumn(identifier: Self.identifier(column))
             tableColumn.headerCell = FileHeaderCell(textCell: column.title)
             tableColumn.title = column.title
             tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: true)
-            tableColumn.minWidth = column == .name ? 120 : 50
-            tableColumn.width = widths[column.rawValue].map { CGFloat($0) } ?? Self.defaultWidth(column)
             tableView.addTableColumn(tableColumn)
         }
+        applyColumnWidths()
+    }
+
+    /// Sets the columns' saved (or default) widths at the current zoom.
+    func applyColumnWidths() {
+        let widths = UserDefaults.standard.dictionary(forKey: Self.columnWidthsKey) as? [String: Double] ?? [:]
+        let wasApplying = isApplyingSettings
+        isApplyingSettings = true // not a resize by the user: nothing to save
+        for tableColumn in tableView.tableColumns {
+            guard let column = FileColumn(rawValue: tableColumn.identifier.rawValue) else { continue }
+            let width = widths[column.rawValue].map { CGFloat($0) } ?? Self.defaultWidth(column)
+            tableColumn.minWidth = Theme.zoomed(column == .name ? 120 : 50)
+            tableColumn.width = (width * Theme.zoom).rounded()
+        }
+        isApplyingSettings = wasApplying
     }
 
     static func identifier(_ column: FileColumn) -> NSUserInterfaceItemIdentifier {
@@ -146,11 +159,13 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
 
         cell.textField?.stringValue = text(for: column, item: item)
         (cell as? StatusCellView)?.show(item.cloudStatus)
-        // Set on every use, so reused cells follow a style change. Windows 98 has no grey columns.
-        cell.textField?.font = Theme.font(ofSize: 12)
+        // Set on every use, so reused cells follow a style or zoom change. Windows 98 has no grey
+        // columns.
+        cell.textField?.font = Theme.contentFont(ofSize: 12)
         if column != .name { cell.textField?.textColor = Theme.isClassic ? .labelColor : .secondaryLabelColor }
         if let nameCell = cell as? NameCellView {
             nameCell.imageView?.image = icon(for: item)
+            nameCell.iconSize = Theme.zoomed(16)
             nameCell.showsCheckbox = showsCheckboxes
             nameCell.checkbox.state = tableView.isRowSelected(row) ? .on : .off
             nameCell.onToggle = { [weak self] in self?.toggleSelection(of: item.url) }
@@ -243,20 +258,20 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard !isApplyingSettings,
               let tableColumn = notification.userInfo?["NSTableColumn"] as? NSTableColumn else { return }
         var widths = UserDefaults.standard.dictionary(forKey: Self.columnWidthsKey) as? [String: Double] ?? [:]
-        widths[tableColumn.identifier.rawValue] = Double(tableColumn.width)
+        widths[tableColumn.identifier.rawValue] = Double(tableColumn.width / Theme.zoom)
         UserDefaults.standard.set(widths, forKey: Self.columnWidthsKey)
     }
 
     /// Widens `column` to fit its longest value (Windows' "Size column to fit").
     func sizeColumnToFit(_ column: FileColumn) {
         guard let tableColumn = tableView.tableColumn(withIdentifier: Self.identifier(column)) else { return }
-        let font = Theme.font(ofSize: 12)
+        let font = Theme.contentFont(ofSize: 12)
         let header = (column.title as NSString).size(withAttributes: [.font: font]).width + 24
         let widest = allItems.prefix(5000).reduce(header) { widest, item in
             let width = (text(for: column, item: item) as NSString).size(withAttributes: [.font: font]).width
             return max(widest, width)
         }
-        let extra: CGFloat = column == .name ? (showsCheckboxes ? 52 : 32) : 12
+        let extra = Theme.zoomed(column == .name ? (showsCheckboxes ? 52 : 32) : 12)
         tableColumn.width = max(tableColumn.minWidth, ceil(widest + extra))
     }
 }
@@ -277,7 +292,17 @@ final class NameCellView: NSTableCellView {
         }
     }
 
+    /// The icon's edge length, which follows the zoom.
+    var iconSize: CGFloat = 16 {
+        didSet {
+            iconWidth.constant = iconSize
+            iconHeight.constant = iconSize
+        }
+    }
+
     private var iconLeading: NSLayoutConstraint!
+    private var iconWidth: NSLayoutConstraint!
+    private var iconHeight: NSLayoutConstraint!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -296,13 +321,15 @@ final class NameCellView: NSTableCellView {
         self.textField = textField
 
         iconLeading = imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2)
+        iconWidth = imageView.widthAnchor.constraint(equalToConstant: iconSize)
+        iconHeight = imageView.heightAnchor.constraint(equalToConstant: iconSize)
         NSLayoutConstraint.activate([
             checkbox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             checkbox.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconLeading,
             imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 16),
-            imageView.heightAnchor.constraint(equalToConstant: 16),
+            iconWidth,
+            iconHeight,
             textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
             textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             textField.centerYAnchor.constraint(equalTo: centerYAnchor),
