@@ -2,6 +2,12 @@
 
 A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.md](PLAN.md) for the roadmap.
 
+![Panes in Details view, with the navigation pane, address bar and command bar](docs/screenshots/details.png)
+
+| Large icons, with thumbnails | Dual pane | Windows 98 style |
+|---|---|---|
+| ![Large icons view showing picture thumbnails](docs/screenshots/icons.png) | ![Two folders side by side in dual pane](docs/screenshots/dual-pane.png) | ![The same window in the optional Windows 98 style](docs/screenshots/windows-98.png) |
+
 ## Requirements
 - macOS 13+
 - Swift 6 toolchain (Command Line Tools are enough; Xcode optional)
