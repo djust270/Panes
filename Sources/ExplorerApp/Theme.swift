@@ -1,4 +1,5 @@
 import AppKit
+import ExplorerCore
 
 /// Windows 11 look: colours, corner radii and fonts used by the custom-drawn parts of the UI.
 ///
@@ -27,9 +28,16 @@ enum Theme {
     static var fieldHeight: CGFloat { isClassic ? 18 : 32 }
 
     /// Details and navigation pane row heights; Compact view tightens them. Windows 98's rows
-    /// are always tight.
-    static var detailsRowHeight: CGFloat { isClassic ? 18 : (AppSettings.compactView ? 22 : 30) }
-    static var navigationRowHeight: CGFloat { isClassic ? 20 : (AppSettings.compactView ? 24 : 30) }
+    /// are always tight. Both follow the zoom.
+    static var detailsRowHeight: CGFloat { zoomed(isClassic ? 18 : (AppSettings.compactView ? 22 : 30)) }
+    static var navigationRowHeight: CGFloat { zoomed(isClassic ? 20 : (AppSettings.compactView ? 24 : 30)) }
+
+    /// View › Zoom In / Zoom Out, which scales the file list and the navigation pane (not the
+    /// tabs, address bar or command bar).
+    static var zoom: CGFloat { CGFloat(TextZoom.clamped(AppSettings.textZoom)) }
+
+    /// A file list or navigation pane metric at the current zoom, in whole points.
+    static func zoomed(_ value: CGFloat) -> CGFloat { (value * zoom).rounded() }
 
     // MARK: Colours
 
@@ -129,6 +137,11 @@ enum Theme {
             if let font = NSFont(name: name, size: size) { return font }
         }
         return .systemFont(ofSize: size, weight: weight)
+    }
+
+    /// `font(ofSize:weight:)` at the current zoom, for the file list and the navigation pane.
+    static func contentFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        font(ofSize: size * zoom, weight: weight)
     }
 
     private static let hasSegoe = NSFont(name: "SegoeUI", size: 12) != nil

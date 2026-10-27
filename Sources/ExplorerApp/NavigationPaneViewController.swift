@@ -280,7 +280,6 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
 
             let imageView = NSImageView()
             imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.symbolConfiguration = .init(scale: .small)
             cell.addSubview(imageView)
             cell.imageView = imageView
 
@@ -291,11 +290,13 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
             cell.addSubview(textField)
             cell.textField = textField
 
+            let iconHeight = imageView.heightAnchor.constraint(equalToConstant: 16)
+            iconHeight.identifier = Self.iconSizeIdentifier
             NSLayoutConstraint.activate([
                 imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
                 imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                imageView.widthAnchor.constraint(equalToConstant: 16),
-                imageView.heightAnchor.constraint(equalToConstant: 16),
+                imageView.widthAnchor.constraint(equalTo: imageView.heightAnchor),
+                iconHeight,
 
                 textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
                 textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
@@ -304,9 +305,19 @@ extension NavigationPaneViewController: NSOutlineViewDelegate {
         }
 
         cell.textField?.stringValue = sidebarItem.title
-        cell.textField?.font = Theme.font(ofSize: 12) // reused cells follow a style change
+        // Set on every use, so reused cells follow a style or zoom change.
+        cell.textField?.font = Theme.contentFont(ofSize: 12)
+        cell.imageView?.symbolConfiguration = Self.symbolConfiguration
+        cell.imageView?.constraints.first { $0.identifier == Self.iconSizeIdentifier }?.constant = Theme.zoomed(16)
         cell.imageView?.image = NSImage(systemSymbolName: sidebarItem.symbolName, accessibilityDescription: nil)
         return cell
+    }
+
+    private static let iconSizeIdentifier = "iconSize"
+
+    /// Small-scale symbols sized for the zoomed text.
+    private static var symbolConfiguration: NSImage.SymbolConfiguration {
+        .init(pointSize: 13 * Theme.zoom, weight: .regular, scale: .small)
     }
 
     func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {

@@ -138,6 +138,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.dualPane.toggle()
     }
 
+    @objc func zoomIn(_ sender: Any?) {
+        if let zoom = TextZoom.zoomedIn(from: AppSettings.textZoom) { AppSettings.textZoom = zoom }
+    }
+
+    @objc func zoomOut(_ sender: Any?) {
+        if let zoom = TextZoom.zoomedOut(from: AppSettings.textZoom) { AppSettings.textZoom = zoom }
+    }
+
+    @objc func actualSize(_ sender: Any?) {
+        AppSettings.textZoom = TextZoom.actualSize
+    }
+
     // MARK: Windows
 
     func openWindow(at location: ExplorerLocation) {
@@ -187,6 +199,12 @@ extension AppDelegate: NSMenuItemValidation {
             menuItem.state = AppSettings.compactView ? .on : .off
         case #selector(toggleDualPane(_:)):
             menuItem.state = AppSettings.dualPane ? .on : .off
+        case #selector(zoomIn(_:)):
+            return TextZoom.zoomedIn(from: AppSettings.textZoom) != nil
+        case #selector(zoomOut(_:)):
+            return TextZoom.zoomedOut(from: AppSettings.textZoom) != nil
+        case #selector(actualSize(_:)):
+            return AppSettings.textZoom != TextZoom.actualSize
         case #selector(checkForUpdates(_:)):
             return Updater.shared.canCheckForUpdates
         default:

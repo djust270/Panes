@@ -5,7 +5,7 @@ import ExplorerCore
 /// clicking the title selects the group's items, as on Windows. Used as a Details-view group
 /// row and as an icon-view section header.
 final class GroupHeaderView: NSView, NSCollectionViewElement {
-    static let height: CGFloat = 30
+    static var height: CGFloat { Theme.zoomed(30) }
     static let identifier = NSUserInterfaceItemIdentifier("GroupHeader")
 
     var onToggle: (() -> Void)?
@@ -51,11 +51,11 @@ final class GroupHeaderView: NSView, NSCollectionViewElement {
         chevron.image = NSImage(systemSymbolName: symbol, accessibilityDescription: isCollapsed ? "Expand" : "Collapse")
         chevron.contentTintColor = .secondaryLabelColor
         let title = NSMutableAttributedString(string: group.title, attributes: [
-            .font: Theme.font(ofSize: 12, weight: .semibold),
+            .font: Theme.contentFont(ofSize: 12, weight: .semibold),
             .foregroundColor: NSColor.labelColor,
         ])
         title.append(NSAttributedString(string: " (\(group.items.count))", attributes: [
-            .font: Theme.font(ofSize: 12),
+            .font: Theme.contentFont(ofSize: 12),
             .foregroundColor: NSColor.secondaryLabelColor,
         ]))
         titleButton.attributedTitle = title

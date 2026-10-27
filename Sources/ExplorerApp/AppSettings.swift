@@ -60,6 +60,7 @@ enum AppSettings {
         static let hiddenFiles = "ShowHiddenFiles"
         static let fileExtensions = "ShowFileExtensions"
         static let compactView = "CompactView"
+        static let textZoom = "TextZoom"
         static let startLocation = "StartLocation"
         static let driveLetters = "ShowDriveLetters"
         static let dualPane = "DualPane"
@@ -127,6 +128,13 @@ enum AppSettings {
     static var compactView: Bool {
         get { defaults.bool(forKey: Key.compactView) }
         set { set(newValue, for: Key.compactView) }
+    }
+
+    /// View › Zoom In / Zoom Out: the size of the file list's and navigation pane's text and
+    /// rows (`TextZoom`), 1 = 100%.
+    static var textZoom: Double {
+        get { defaults.object(forKey: Key.textZoom) as? Double ?? TextZoom.actualSize }
+        set { set(TextZoom.clamped(newValue), for: Key.textZoom) }
     }
 
     static var startLocation: StartLocation {

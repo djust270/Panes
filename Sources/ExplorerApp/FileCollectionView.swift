@@ -48,6 +48,8 @@ final class FileCollectionLayout: NSCollectionViewFlowLayout {
     let viewMode: ViewMode
     let isGrouped: Bool
     let isHome: Bool
+    /// The zoom the item sizes were made for.
+    let zoom = Theme.zoom
 
     init(viewMode: ViewMode, isGrouped: Bool, isHome: Bool = false) {
         self.viewMode = viewMode
@@ -85,16 +87,19 @@ final class FileCollectionLayout: NSCollectionViewFlowLayout {
         fatalError("init(coder:) is not supported")
     }
 
+    /// At 100%: icon grids 280×304, 120×144, 84×96 (two lines of name under the icon); rows
+    /// 22 high; tiles 260×64; content rows 60 high. Zooming grows the text's share; the
+    /// icons keep their size.
     static func itemSize(for mode: ViewMode) -> NSSize {
         switch mode {
-        case .extraLargeIcons: return NSSize(width: 280, height: 304)
-        case .largeIcons: return NSSize(width: 120, height: 144)
-        case .mediumIcons: return NSSize(width: 84, height: 96)
-        case .smallIcons: return NSSize(width: 220, height: 22)
-        case .list: return NSSize(width: 240, height: 22)
-        case .tiles: return NSSize(width: 260, height: 64)
-        case .content: return NSSize(width: 600, height: 60)
-        case .details: return NSSize(width: 300, height: 22)
+        case .extraLargeIcons, .largeIcons, .mediumIcons:
+            let width: CGFloat = mode == .extraLargeIcons ? 280 : (mode == .largeIcons ? 120 : 84)
+            return NSSize(width: width + Theme.zoomed(60) - 60, height: mode.iconSize + 10 + Theme.zoomed(38))
+        case .smallIcons: return NSSize(width: Theme.zoomed(220), height: Theme.zoomed(22))
+        case .list: return NSSize(width: Theme.zoomed(240), height: Theme.zoomed(22))
+        case .tiles: return NSSize(width: 60 + Theme.zoomed(200), height: max(64, Theme.zoomed(46) + 18))
+        case .content: return NSSize(width: 600, height: max(60, Theme.zoomed(34) + 26))
+        case .details: return NSSize(width: Theme.zoomed(300), height: Theme.zoomed(22))
         }
     }
 

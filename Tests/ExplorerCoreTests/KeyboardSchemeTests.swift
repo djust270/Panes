@@ -44,6 +44,17 @@ import Testing
         }
     }
 
+    @Test func zoomUsesPlusMinusAndZeroWithEitherModifier() {
+        let windows = KeyboardScheme.windows
+        #expect(windows.shortcuts(for: .zoomIn).first == KeyShortcut("+", .control))
+        #expect(windows.shortcuts(for: .zoomIn).contains(KeyShortcut("=", .control)))
+        #expect(windows.shortcuts(for: .zoomIn).contains(KeyShortcut("=", [.control, .shift])))
+        #expect(windows.shortcuts(for: .zoomIn).contains(KeyShortcut("=", .command)))
+        #expect(windows.shortcuts(for: .zoomOut) == [KeyShortcut("-", .control), KeyShortcut("-", .command)])
+        #expect(windows.shortcuts(for: .actualSize) == [KeyShortcut("0", .control), KeyShortcut("0", .command)])
+        #expect(KeyboardScheme.mac.shortcuts(for: .zoomOut) == [KeyShortcut("-", .command)])
+    }
+
     @Test func outOfRangeIndexesHaveNoShortcut() {
         #expect(KeyboardScheme.windows.shortcuts(for: .viewMode(9)).isEmpty)
         #expect(KeyboardScheme.windows.shortcuts(for: .selectTab(10)).isEmpty)
@@ -163,5 +174,31 @@ import Testing
         let items = [item("a.jpg"), item("b.mp3"), item("c.txt"), item("D", .directory)]
         #expect(Set<FileKind>().filter(items).count == 4)
         #expect(Set([FileKind.pictures, .music]).filter(items).map(\.name) == ["a.jpg", "b.mp3"])
+    }
+}
+
+@Suite struct TextZoomTests {
+    @Test func stepsThroughTheLevels() {
+        #expect(TextZoom.zoomedIn(from: 1) == 1.1)
+        #expect(TextZoom.zoomedOut(from: 1) == 0.9)
+        #expect(TextZoom.zoomedIn(from: 2) == nil)
+        #expect(TextZoom.zoomedOut(from: 0.8) == nil)
+    }
+
+    @Test func stepsFromBetweenLevelsToTheNearestInThatDirection() {
+        #expect(TextZoom.zoomedIn(from: 1.3) == 1.5)
+        #expect(TextZoom.zoomedOut(from: 1.3) == 1.25)
+    }
+
+    @Test func clampsStoredValues() {
+        #expect(TextZoom.clamped(5) == 2)
+        #expect(TextZoom.clamped(0) == 0.8)
+        #expect(TextZoom.clamped(.nan) == 1)
+        #expect(TextZoom.clamped(1.25) == 1.25)
+    }
+
+    @Test func titlesArePercentages() {
+        #expect(TextZoom.title(for: 1.25) == "125%")
+        #expect(TextZoom.title(for: 0.9) == "90%")
     }
 }

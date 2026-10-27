@@ -173,10 +173,11 @@ final class FileItemView: NSView {
         line2.isHidden = !capacityBar.isHidden || (viewMode != .tiles && viewMode != .content && viewMode != .details)
     }
 
-    /// Set whenever the item is configured, so reused items follow a style change.
+    /// Set whenever the item is configured, so reused items follow a style or zoom change.
     private func applyFonts() {
-        nameField.font = Theme.font(ofSize: 12)
-        for label in [line2, line3, right1, right2] { label.font = Theme.font(ofSize: 11) }
+        nameField.font = Theme.contentFont(ofSize: 12)
+        for label in [line2, line3, right1, right2] { label.font = Theme.contentFont(ofSize: 11) }
+        needsLayout = true
     }
 
     private static func detailLabel() -> NSTextField {
@@ -216,6 +217,10 @@ final class FileItemView: NSView {
         let icon = viewMode.iconSize
         let inset: CGFloat = showsCheckbox && !viewMode.isIconGrid ? 20 : 0
         checkbox.frame = NSRect(x: 4, y: viewMode.isIconGrid ? 4 : (height - 16) / 2, width: 16, height: 16)
+        // Text heights, and small icons, follow the zoom; large icons keep their size.
+        let nameHeight = Theme.zoomed(16)
+        let lineHeight = Theme.zoomed(15)
+        let small = Theme.zoomed(16)
 
         switch viewMode {
         case .extraLargeIcons, .largeIcons, .mediumIcons:
@@ -223,35 +228,39 @@ final class FileItemView: NSView {
             let top = 6 + icon + 4
             nameField.frame = NSRect(x: 4, y: top, width: width - 8, height: max(0, height - top - 2))
         case .smallIcons, .list:
-            iconView.frame = NSRect(x: 4 + inset, y: (height - 16) / 2, width: 16, height: 16)
-            nameField.frame = NSRect(x: 24 + inset, y: (height - 16) / 2, width: width - 28 - inset, height: 16)
+            iconView.frame = NSRect(x: 4 + inset, y: (height - small) / 2, width: small, height: small)
+            let x = small + 8 + inset
+            nameField.frame = NSRect(x: x, y: (height - nameHeight) / 2, width: width - x - 4, height: nameHeight)
         case .details:
             // Home's rows: Name | date | folder, like Windows' Recent list.
-            let x = 30 + inset
-            iconView.frame = NSRect(x: 8 + inset, y: (height - 16) / 2, width: 16, height: 16)
-            let nameWidth = max(140, (width - x) * 0.45)
-            nameField.frame = NSRect(x: x, y: (height - 16) / 2, width: nameWidth - 12, height: 16)
-            right1.frame = NSRect(x: x + nameWidth, y: (height - 15) / 2, width: 140, height: 15)
-            let folderX = x + nameWidth + 150
-            line2.frame = NSRect(x: folderX, y: (height - 15) / 2, width: max(0, width - folderX - 8), height: 15)
+            let x = 14 + small + inset
+            iconView.frame = NSRect(x: 8 + inset, y: (height - small) / 2, width: small, height: small)
+            let nameWidth = max(Theme.zoomed(140), (width - x) * 0.45)
+            nameField.frame = NSRect(x: x, y: (height - nameHeight) / 2, width: nameWidth - 12, height: nameHeight)
+            right1.frame = NSRect(x: x + nameWidth, y: (height - lineHeight) / 2, width: Theme.zoomed(140),
+                                  height: lineHeight)
+            let folderX = x + nameWidth + Theme.zoomed(150)
+            line2.frame = NSRect(x: folderX, y: (height - lineHeight) / 2, width: max(0, width - folderX - 8),
+                                 height: lineHeight)
         case .tiles:
             iconView.frame = NSRect(x: 6 + inset, y: (height - icon) / 2, width: icon, height: icon)
             let x = 60 + inset
-            let top = (height - 46) / 2
-            nameField.frame = NSRect(x: x, y: top, width: width - x - 4, height: 16)
-            line2.frame = NSRect(x: x, y: top + 16, width: width - x - 4, height: 15)
-            line3.frame = NSRect(x: x, y: top + 31, width: width - x - 4, height: 15)
+            let top = ((height - nameHeight - 2 * lineHeight) / 2).rounded(.down)
+            nameField.frame = NSRect(x: x, y: top, width: width - x - 4, height: nameHeight)
+            line2.frame = NSRect(x: x, y: top + nameHeight, width: width - x - 4, height: lineHeight)
+            line3.frame = NSRect(x: x, y: top + nameHeight + lineHeight, width: width - x - 4, height: lineHeight)
             let barHeight: CGFloat = Theme.isClassic ? 12 : 8
-            capacityBar.frame = NSRect(x: x, y: top + 24 - barHeight / 2, width: max(0, min(200, width - x - 12)),
-                                       height: barHeight)
+            capacityBar.frame = NSRect(x: x, y: top + nameHeight + 8 - barHeight / 2,
+                                       width: max(0, min(200, width - x - 12)), height: barHeight)
         case .content:
             iconView.frame = NSRect(x: 8 + inset, y: (height - icon) / 2, width: icon, height: icon)
             let x = 58 + inset
             let split = max(x + 120, width * 0.55)
-            nameField.frame = NSRect(x: x, y: height / 2 - 17, width: split - x - 12, height: 16)
-            line2.frame = NSRect(x: x, y: height / 2 + 1, width: split - x - 12, height: 15)
-            right1.frame = NSRect(x: split, y: height / 2 - 16, width: max(0, width - split - 8), height: 15)
-            right2.frame = NSRect(x: split, y: height / 2 + 1, width: max(0, width - split - 8), height: 15)
+            nameField.frame = NSRect(x: x, y: height / 2 - nameHeight - 1, width: split - x - 12, height: nameHeight)
+            line2.frame = NSRect(x: x, y: height / 2 + 1, width: split - x - 12, height: lineHeight)
+            right1.frame = NSRect(x: split, y: height / 2 - lineHeight - 1, width: max(0, width - split - 8),
+                                  height: lineHeight)
+            right2.frame = NSRect(x: split, y: height / 2 + 1, width: max(0, width - split - 8), height: lineHeight)
         }
         layoutStatusBadge()
     }
