@@ -218,7 +218,9 @@ private final class DetailsPaneView: NSView {
     }
 
     private func setRows(_ rows: [(String, String)]) {
+        // removeRow(at:) leaves the row's views in the grid, still drawing where they were.
         while grid.numberOfRows > 0 { grid.removeRow(at: 0) }
+        grid.subviews.forEach { $0.removeFromSuperview() }
         for (name, value) in rows {
             let label = NSTextField(labelWithString: name)
             label.textColor = .secondaryLabelColor
@@ -230,6 +232,26 @@ private final class DetailsPaneView: NSView {
         }
         if grid.numberOfColumns > 0 {
             grid.column(at: 0).xPlacement = .trailing
+        }
+        updateValueWidths()
+    }
+
+    override func layout() {
+        super.layout()
+        updateValueWidths()
+    }
+
+    /// Wrapping labels report their one-line width unless told how wide they may be, so
+    /// long values (Location) would run off the pane; give them what the names leave.
+    private func updateValueWidths() {
+        guard grid.numberOfRows > 0 else { return }
+        let cells = (0..<grid.numberOfRows).map { grid.row(at: $0) }
+        let nameWidth = cells.compactMap { $0.cell(at: 0).contentView?.fittingSize.width }.max() ?? 0
+        let valueWidth = max(40, bounds.width - 32 - nameWidth - grid.columnSpacing).rounded(.down)
+        for row in cells {
+            guard let field = row.cell(at: 1).contentView as? NSTextField,
+                  field.preferredMaxLayoutWidth != valueWidth else { continue }
+            field.preferredMaxLayoutWidth = valueWidth
         }
     }
 }
