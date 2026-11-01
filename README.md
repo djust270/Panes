@@ -8,6 +8,23 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 |---|---|---|
 | ![Large icons view showing picture thumbnails](docs/screenshots/icons.png) | ![Two folders side by side in dual pane](docs/screenshots/dual-pane.png) | ![The same window in the optional Windows 98 style](docs/screenshots/windows-98.png) |
 
+## SSH servers
+Browse any computer you can `ssh` to, the way you'd use a mapped network drive. Type an address such as
+`user@host:/var/www` or `sftp://host:2222/srv` into the address bar, use **Connect to SSH Server…**, or pick a
+server under Network: servers you've saved, plus the hosts in your `~/.ssh/config`.
+
+- **Your SSH setup just works.** Panes uses the Mac's own `ssh`, so your keys, agent, `~/.ssh/config` and
+  `known_hosts` are used as in Terminal. If a password, key passphrase or new host key needs confirming, Panes asks
+  in the window.
+- **Copy files in and out.** Copy and paste, drag and drop (including to and from Finder), or use Download to… and
+  Upload files…. You get the usual progress window, pause and cancel, and Replace / Skip / Keep both.
+- **Open, rename, delete.** Opening a file opens a local copy. Rename (with undo) and New folder work on the server.
+  Delete is permanent, after a confirmation, as on Windows for network folders.
+
+| Browsing a server | Connect to SSH Server | Signing in to a new server |
+|---|---|---|
+| ![A web server's folder listed over SSH, with the details pane](docs/screenshots/ssh.png) | ![The Connect to SSH Server dialog, filled in](docs/screenshots/ssh-connect.png) | ![Asking whether to trust a server's key the first time](docs/screenshots/ssh-sign-in.png) |
+
 ## Requirements
 - macOS 13+
 - Swift 6 toolchain (Command Line Tools are enough; Xcode optional)
@@ -22,6 +39,7 @@ A native macOS file manager modelled on the Windows 11 File Explorer. See [PLAN.
 | Test | `scripts/test.sh` |
 | Test incl. 100k-file perf check | `EXPLORER_PERF_TESTS=1 scripts/test.sh` |
 | Test incl. cross-volume ops on an exFAT disk image | `EXPLORER_VOLUME_TESTS=1 scripts/test.sh` |
+| Test incl. a real SSH server (key sign-in to `localhost` by default) | `EXPLORER_SSH_TESTS=1 [EXPLORER_SSH_HOST=host] scripts/test.sh` |
 | Build `build/Panes.app` | `scripts/bundle.sh` |
 | Preview the app icon (drawn by `scripts/make-icon.swift`) | `swift scripts/make-icon.swift icon.png` |
 | Signed + notarized build | `SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh && scripts/notarize.sh` |
@@ -52,6 +70,9 @@ To work in Xcode, open `Package.swift`.
 - Cloud storage: `CloudStorage` (ExplorerCore: the OneDrive, iCloud Drive, Google Drive, Dropbox… folders and their
   names), `CloudSync` (ExplorerCore: download, free up space) and `CloudCenter` (ExplorerApp: follows accounts being
   added or removed; opens online-only files after downloading them).
+- Remote folders (SSH): `RemotePath`, `SSHConfig`, `SSHCommand`, `SSHConnectionPool`, `SFTPClient`, `RemoteListing`,
+  `Askpass` and `RemoteConnectionStore` (ExplorerCore); `RemoteCenter`, `AskpassPrompter`, `ConnectSSHDialog` and
+  `RemoteFilePromise` (ExplorerApp).
 - `Tests/ExplorerCoreTests` — Swift Testing suites.
 
 ## Releases
