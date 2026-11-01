@@ -92,6 +92,25 @@ public enum FileOperationText {
         case .download(let urls):
             let provider = urls.first.flatMap(CloudSync.providerName(for:)) ?? sourceFolder ?? ""
             return "Downloading \(items) from \(provider)"
+        case .remoteDownload, .remoteUpload, .remoteDelete, .remoteRename, .remoteCreateFolder:
+            return remoteSummary(of: request, items: items, sourceFolder: sourceFolder ?? "")
+        }
+    }
+
+    /// The headline for work on an SSH server.
+    private static func remoteSummary(of request: FileOperationRequest, items: String, sourceFolder: String) -> String {
+        switch request {
+        case .remoteDownload(let paths, let folder):
+            let host = paths.first?.host.displayName ?? ""
+            return "Downloading \(items) from \(host) to \(ExplorerLocation.folder(folder).displayName)"
+        case .remoteUpload(_, let folder):
+            return "Uploading \(items) from \(sourceFolder) to \(folder.host.displayName)"
+        case .remoteDelete(let paths):
+            return "Deleting \(items) from \(paths.first?.host.displayName ?? "")"
+        case .remoteCreateFolder(let folder, _):
+            return "Creating \(items) in \(folder.name)"
+        default:
+            return "Renaming \(items)"
         }
     }
 

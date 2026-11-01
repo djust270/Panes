@@ -25,7 +25,7 @@ extension ContentViewController: NSTextFieldDelegate {
     func beginRenaming(_ url: URL) {
         finishRenaming(commit: true)
         let url = url.standardizedFileURL
-        guard mode == .folder,
+        guard mode == .folder || mode == .remote,
               let item = listContent.allItems.first(where: { $0.url == url }),
               let (field, container) = nameField(for: item) else { return }
 

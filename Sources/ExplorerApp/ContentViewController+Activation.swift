@@ -9,11 +9,20 @@ extension ContentViewController {
         let selected = selectedItems
         guard !selected.isEmpty, mode != .recycleBin else { return }
         if mode == .network {
-            if let computer = selected.first { onConnect?(computer.url) }
+            guard let computer = selected.first else { return }
+            if let server = RemotePath(url: computer.url) {
+                onNavigate?(.remote(server))
+            } else {
+                onConnect?(computer.url)
+            }
             return
         }
-        if selected.count == 1, let only = selected.first, only.isFolder {
-            onNavigate?(.folder(only.url))
+        if selected.count == 1, let only = selected.first, only.isFolder, let location = location(for: only) {
+            onNavigate?(location)
+            return
+        }
+        if mode == .remote {
+            RemoteCenter.open(selected, from: view.window)
             return
         }
         CloudCenter.open(selected.filter { !$0.isFolder }.map(\.url))
@@ -42,15 +51,25 @@ extension ContentViewController {
 
     /// Middle-click on a folder opens it in a new tab.
     func openInNewTab(_ item: FileItem) {
-        guard item.isFolder, mode != .recycleBin, mode != .network else { return }
-        onOpenInNewTab?(.folder(item.url))
+        guard mode != .recycleBin, mode != .network, let location = location(for: item) else { return }
+        onOpenInNewTab?(location)
+    }
+
+    /// Where opening a folder item goes: a local or a remote folder. `nil` for files.
+    func location(for item: FileItem) -> ExplorerLocation? {
+        guard item.isFolder else { return nil }
+        if let remote = RemotePath(url: item.url) { return .remote(remote) }
+        return .folder(item.url)
     }
 
     // MARK: Display helpers
 
     func icon(for item: FileItem) -> NSImage {
-        if mode == .network { return NSImage(named: NSImage.computerName) ?? NSImage() }
-        return NSWorkspace.shared.icon(forFile: item.url.path)
+        if mode == .network {
+            let symbol = item.isRemote ? NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil) : nil
+            return symbol ?? NSImage(named: NSImage.computerName) ?? NSImage()
+        }
+        return FileIcons.icon(for: item)
     }
 
     func isCut(_ item: FileItem) -> Bool {

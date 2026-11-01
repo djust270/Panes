@@ -1,5 +1,6 @@
 import AppKit
 import ExplorerCore
+import UniformTypeIdentifiers
 
 /// Navigation commands, and the Windows 11 context menu's extras: open in a new tab or
 /// window, Open with, Send to, Share, Compress to ZIP file and Copy as path.
@@ -31,23 +32,24 @@ extension ExplorerTabController {
 
     @objc func openInNewTab(_ sender: Any?) {
         for folder in selectedFolders() {
-            host?.openTab(at: .folder(folder), besides: self, select: false)
+            host?.openTab(at: folder, besides: self, select: false)
         }
     }
 
     @objc func openInNewWindow(_ sender: Any?) {
         for folder in selectedFolders() {
-            AppDelegate.shared.openWindow(at: .folder(folder))
+            AppDelegate.shared.openWindow(at: folder)
         }
     }
 
-    private func selectedFolders() -> [URL] {
-        content.selectedItems.filter(\.isFolder).map(\.url)
+    private func selectedFolders() -> [ExplorerLocation] {
+        content.selectedItems.compactMap(content.location(for:))
     }
 
     /// "Open with ▸ <app>"; the menu item carries the app's URL.
     @objc func openWith(_ sender: NSMenuItem) {
         guard let app = sender.representedObject as? URL else { return }
+        if inRemote { return RemoteCenter.open(content.selectedItems, with: app, from: view.window) }
         let files = content.selectedItems.filter { !$0.isFolder }.map(\.url)
         open(files, with: app)
     }
@@ -61,7 +63,11 @@ extension ExplorerTabController {
             if choice.always, let error = await DefaultApps.setDefault(choice.app, for: files[0]) {
                 await inform("Couldn’t make it the default app. \(error)")
             }
-            open(files, with: choice.app)
+            if inRemote {
+                RemoteCenter.open(content.selectedItems, with: choice.app, from: window)
+            } else {
+                open(files, with: choice.app)
+            }
         }
     }
 
@@ -73,10 +79,18 @@ extension ExplorerTabController {
     static func apps(toOpen files: [URL]) -> (default: URL?, others: [URL]) {
         guard let first = files.first else { return (nil, []) }
         let workspace = NSWorkspace.shared
-        let defaultApp = workspace.urlForApplication(toOpen: first)
-        var apps = workspace.urlsForApplications(toOpen: first)
+        // Remote files have no file to ask about: go by their type.
+        func type(of url: URL) -> UTType? {
+            url.scheme == RemotePath.urlScheme ? UTType(filenameExtension: url.pathExtension) ?? .data : nil
+        }
+        func candidates(for url: URL) -> [URL] {
+            type(of: url).map(workspace.urlsForApplications(toOpen:)) ?? workspace.urlsForApplications(toOpen: url)
+        }
+        let defaultApp = type(of: first).map(workspace.urlForApplication(toOpen:))
+            ?? workspace.urlForApplication(toOpen: first)
+        var apps = candidates(for: first)
         for file in files.dropFirst().prefix(20) {
-            let supported = Set(workspace.urlsForApplications(toOpen: file))
+            let supported = Set(candidates(for: file))
             apps = apps.filter(supported.contains)
         }
         var seen = Set<String>()
@@ -117,9 +131,15 @@ extension ExplorerTabController {
     // MARK: Copy as path, Compress
 
     @objc func copyAsPath(_ sender: Any?) {
+        let pasteboard = NSPasteboard.general
+        if let folder = currentRemoteFolder {
+            let paths = selectedRemotePaths.isEmpty ? [folder] : selectedRemotePaths
+            pasteboard.clearContents()
+            pasteboard.setString(paths.map(\.addressString).joined(separator: "\n"), forType: .string)
+            return
+        }
         let urls = selectedURLs.isEmpty ? currentFolder.map { [$0] } ?? [] : selectedURLs
         guard !urls.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(FileNaming.quotedPaths(urls), forType: .string)
     }

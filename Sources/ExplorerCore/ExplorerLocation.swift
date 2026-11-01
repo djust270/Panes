@@ -14,6 +14,8 @@ public enum ExplorerLocation: Sendable, Hashable {
     case recycleBin
     /// Search results for `query` under `scope`.
     case search(query: String, scope: URL)
+    /// A folder on an SSH server.
+    case remote(RemotePath)
 
     /// Creates a folder location with a normalised URL so equal paths compare equal.
     public static func folder(path: String) -> ExplorerLocation {
@@ -33,7 +35,24 @@ public enum ExplorerLocation: Sendable, Hashable {
         case .recycleBin: return "Recycle Bin"
         case .search(let query, let scope):
             return "Search Results in \(ExplorerLocation.folder(scope).displayName) — \(query)"
+        case .remote(let remote):
+            return remote.name
         }
+    }
+
+    /// The text the address bar edits: a path, a remote address, or the location's name.
+    public var editableAddress: String {
+        switch self {
+        case .folder(let url): return url.path
+        case .remote(let remote): return remote.addressString
+        default: return displayName
+        }
+    }
+
+    /// The SSH folder, if this location is one.
+    public var remotePath: RemotePath? {
+        if case .remote(let remote) = self { return remote }
+        return nil
     }
 
     /// The backing directory, if this location is a real folder.
@@ -45,7 +64,8 @@ public enum ExplorerLocation: Sendable, Hashable {
     /// The location reached by "Up" (Alt+↑), or `nil` at the top of the hierarchy.
     ///
     /// Mirrors Windows: a volume root goes up to This PC, a cloud folder (OneDrive etc.) to
-    /// Home; virtual locations other than search have no parent.
+    /// Home, an SSH server's root to Network; virtual locations other than search have no
+    /// parent.
     public var parent: ExplorerLocation? {
         switch self {
         case .folder(let url):
@@ -54,6 +74,9 @@ public enum ExplorerLocation: Sendable, Hashable {
             return .folder(url.deletingLastPathComponent().standardizedFileURL)
         case .search(_, let scope):
             return .folder(scope)
+        case .remote(let remote):
+            guard remote.isResolved else { return nil }
+            return remote.parent.map(ExplorerLocation.remote) ?? .network
         case .home, .thisPC, .network, .recycleBin:
             return nil
         }

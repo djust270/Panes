@@ -49,6 +49,8 @@ public enum FilePropertiesReader {
     /// online-only, as reading it would download it.
     public static func read(_ item: FileItem) -> FileProperties {
         var properties = FileProperties()
+        // Spotlight and image headers need the file on this Mac.
+        guard !item.isRemote else { return properties }
         let values = try? item.url.resourceValues(forKeys: [.tagNamesKey])
         properties.tags = values?.tagNames ?? []
         guard item.kind == .file else { return properties }

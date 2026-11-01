@@ -190,6 +190,7 @@ enum MainMenu {
         menu.add("Home", #selector(ExplorerTabController.goHome(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Map Network Drive…", #selector(ExplorerTabController.mapNetworkDrive(_:)), modifiers: [])
+        menu.add("Connect to SSH Server…", #selector(ExplorerTabController.connectToSSHServer(_:)), modifiers: [])
         return menu
     }
 

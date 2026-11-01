@@ -133,8 +133,8 @@ final class CommandBarView: NSView {
             if button === detailsButton { button.state = probe.state }
         }
         let inFolder = target.currentFolder != nil
-        newButton.isEnabled = inFolder
-        filterButton.isEnabled = inFolder
+        newButton.isEnabled = inFolder || target.inRemote
+        filterButton.isEnabled = inFolder || target.inRemote
         filterButton.contentTintColor = target.content.kindFilter.isEmpty ? .labelColor : Theme.accent
     }
 
@@ -203,6 +203,7 @@ final class CommandBarView: NSView {
         menu.add("Reset all folders…", #selector(ExplorerTabController.resetAllFolders(_:)), modifiers: [])
         menu.addItem(.separator())
         menu.add("Map network drive…", #selector(ExplorerTabController.mapNetworkDrive(_:)), modifiers: [])
+        menu.add("Connect to SSH Server…", #selector(ExplorerTabController.connectToSSHServer(_:)), modifiers: [])
         menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)
         menu.add("Options…", #selector(AppDelegate.showSettings(_:)), modifiers: [])
         let items = menu.items

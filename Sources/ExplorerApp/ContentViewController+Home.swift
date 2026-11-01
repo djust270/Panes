@@ -10,7 +10,7 @@ extension ContentViewController {
         case .recycleBin: return .recycleBin
         case .search: return .searchResults
         case .volumes: return .drives
-        case .folder, .home, .network: return .folder
+        case .folder, .home, .network, .remote: return .folder
         }
     }
 

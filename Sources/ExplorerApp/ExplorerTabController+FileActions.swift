@@ -17,10 +17,12 @@ extension ExplorerTabController {
     }
 
     @objc func copy(_ sender: Any?) {
+        if inRemote { return copyRemoteSelection() }
         FileClipboard.shared.write(selectedURLs, cut: false)
     }
 
     @objc func paste(_ sender: Any?) {
+        if pasteRemote() { return }
         guard let folder = currentFolder, let (urls, isCut) = FileClipboard.shared.read() else { return }
         Task {
             if isCut {
@@ -34,6 +36,7 @@ extension ExplorerTabController {
 
     /// Delete: to the Recycle Bin, or — inside the Recycle Bin — permanently.
     @objc func delete(_ sender: Any?) {
+        if inRemote { return deleteRemoteSelection() }
         guard !selectedURLs.isEmpty else { return }
         if history.current == .recycleBin {
             deletePermanently(sender)
@@ -43,6 +46,7 @@ extension ExplorerTabController {
     }
 
     @objc func deletePermanently(_ sender: Any?) {
+        if inRemote { return deleteRemoteSelection() }
         let urls = selectedURLs
         guard !urls.isEmpty else { return }
         Task {
@@ -56,6 +60,11 @@ extension ExplorerTabController {
     }
 
     @objc func newFolder(_ sender: Any?) {
+        if let folder = currentRemoteFolder {
+            let request = FileOperationRequest.remoteCreateFolder(in: folder, name: FileNaming.newFolderName)
+            Task { await perform(request, renamingResult: true) }
+            return
+        }
         guard let folder = currentFolder else { return }
         Task { await perform(.createFolder(in: folder, name: FileNaming.newFolderName), renamingResult: true) }
     }
@@ -88,9 +97,11 @@ extension ExplorerTabController {
     /// Runs `request`, then selects whatever it produced in the folder being shown.
     @discardableResult
     func perform(_ request: FileOperationRequest, renamingResult: Bool = false) async -> FileOperationResult {
+        guard await connectIfRemote(request) else { return FileOperationResult() }
         let result = await FileOperationCenter.shared.perform(request)
-        let shown = result.resultingItems.filter {
-            $0.standardizedFileURL.deletingLastPathComponent().path == currentFolder?.standardizedFileURL.path
+        let shown = result.resultingItems.filter { url in
+            if let remote = RemotePath(url: url) { return remote.parent != nil && remote.parent == currentRemoteFolder }
+            return url.standardizedFileURL.deletingLastPathComponent().path == currentFolder?.standardizedFileURL.path
         }
         if !shown.isEmpty {
             content.select(shown, renaming: renamingResult ? shown.first : nil)
@@ -105,7 +116,7 @@ extension ExplorerTabController {
         }
         // Copy/move/delete failures were already handled by the operation's Retry/Skip prompt.
         switch request {
-        case .rename, .createFolder, .createFile:
+        case .rename, .createFolder, .createFile, .remoteRename, .remoteCreateFolder:
             if let failure = result.failures.first { await inform(failure.message) }
         default:
             break
@@ -158,7 +169,9 @@ extension ExplorerTabController {
                 guard proceed else { return }
             }
 
-            let result = await FileOperationCenter.shared.perform(.rename(item.url, to: newName))
+            let request = renameRequest(for: item, to: newName)
+            guard await connectIfRemote(request) else { return content.beginRenaming(item.url) }
+            let result = await FileOperationCenter.shared.perform(request)
             guard let failure = result.failures.first else {
                 content.select(result.resultingItems)
                 reload()
@@ -167,8 +180,11 @@ extension ExplorerTabController {
             switch failure.reason {
             case .alreadyExists:
                 let folder = item.url.deletingLastPathComponent()
+                // On a server, go by the names listed; it's only a suggestion.
+                let listed = Set(content.allItems.map { $0.name.lowercased() })
                 let suggestion = FileNaming.uniqueName(newName, hasExtension: item.kind != .directory) {
-                    FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+                    item.isRemote ? listed.contains($0.lowercased())
+                        : FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
                 }
                 let accepted = await confirm(
                     failure.message,
@@ -177,7 +193,7 @@ extension ExplorerTabController {
                     cancel: "No"
                 )
                 if accepted {
-                    await perform(.rename(item.url, to: suggestion))
+                    await perform(renameRequest(for: item, to: suggestion))
                 } else {
                     content.beginRenaming(item.url)
                 }
@@ -207,6 +223,7 @@ extension ExplorerTabController {
 
 extension ExplorerTabController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if let valid = validateRemoteMenuItem(menuItem) { return valid }
         let selection = content.selectedItems
         let location = history.current
         let inFolder = currentFolder != nil
@@ -222,7 +239,7 @@ extension ExplorerTabController: NSMenuItemValidation {
         case #selector(copy(_:)):
             return !selection.isEmpty && listsFiles
         case #selector(paste(_:)):
-            return inFolder && FileClipboard.shared.canPaste
+            return inFolder && (FileClipboard.shared.canPaste || FileClipboard.shared.canPasteRemote)
         case #selector(renameSelection(_:)):
             return selection.count == 1 && (inFolder || inSearchResults)
         case #selector(newFolder(_:)), #selector(newTextDocument(_:)):
@@ -267,6 +284,9 @@ extension ExplorerTabController: FileDropHandling {
             case .move: return moveOperation
             case nil: return []
             }
+        case .remote:
+            // Always a copy: the originals stay on this Mac.
+            return sourceMask.isDisjoint(with: [.copy, .generic]) ? [] : .copy
         default:
             return []
         }
@@ -281,6 +301,8 @@ extension ExplorerTabController: FileDropHandling {
                 ? .copy(urls, into: folder)
                 : .move(urls, into: folder)
             Task { await perform(request) }
+        case .remote(let folder):
+            Task { await upload(urls, into: folder) }
         default:
             break
         }

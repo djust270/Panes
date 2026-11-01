@@ -13,7 +13,12 @@ final class FileOperationCenter {
     private let prompts = PromptQueue()
     private var tasks: [UUID: FileOperationTask] = [:]
 
-    private init() {}
+    private init() {
+        // Operations finish outside any event, so grouping by event could leave a group open
+        // and fold the next operation into it (one Undo reversing two). Each operation gets
+        // its own group instead (`registerUndo`).
+        undoManager.groupsByEvent = false
+    }
 
     var hasRunningOperations: Bool { !tasks.isEmpty }
 
@@ -142,7 +147,11 @@ final class FileOperationCenter {
         case .trash, .delete: verb = "delete"
         case .rename: verb = "rename"
         case .createFolder, .createFile: verb = "create"
-        case .download: verb = "download"
+        case .download, .remoteDownload: verb = "download"
+        case .remoteUpload: verb = "upload"
+        case .remoteDelete: verb = "delete"
+        case .remoteRename: verb = "rename"
+        case .remoteCreateFolder: verb = "create"
         }
         return "Couldn’t \(verb) “\(item)”"
     }
@@ -150,10 +159,12 @@ final class FileOperationCenter {
     // MARK: Undo
 
     private func registerUndo(_ request: FileOperationRequest, actionName: String) {
+        undoManager.beginUndoGrouping()
         undoManager.registerUndo(withTarget: self) { center in
             MainActor.assumeIsolated { center.runReversal(request, actionName: actionName) }
         }
         undoManager.setActionName(actionName)
+        undoManager.endUndoGrouping()
     }
 
     /// Runs one step of an undo/redo pair. The undo manager calls this while undoing (or
