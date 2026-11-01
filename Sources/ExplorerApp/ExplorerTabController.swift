@@ -143,6 +143,10 @@ final class ExplorerTabController: NSViewController {
             guard let self, history.current == .network else { return }
             reload()
         })
+        observers.append(RemoteCenter.observe { [weak self] in
+            guard let self, history.current == .network else { return }
+            reload()
+        })
         observers.append(NotificationCenter.default.addObserver(
             forName: DriveCenter.didUnmountNotification,
             object: nil,
@@ -167,6 +171,9 @@ final class ExplorerTabController: NSViewController {
         }
         addressBar.onNetworkPath = { [weak self] path in
             self?.connect(to: path)
+        }
+        addressBar.onRemotePath = { [weak self] path in
+            self?.navigate(to: .remote(path))
         }
         addressBar.onGoBack = { [weak self] steps in
             self?.goBack(steps: steps)
@@ -289,6 +296,8 @@ final class ExplorerTabController: NSViewController {
         case .network:
             mode = .network
             NetworkBrowser.shared.start()
+        case .remote:
+            mode = .remote
         }
         content.show(mode: mode, settings: settings)
         rootViewController.statusBar.setViewMode(content.settings.viewMode)
@@ -299,7 +308,7 @@ final class ExplorerTabController: NSViewController {
         watch(location)
     }
 
-    private static func icon(for location: ExplorerLocation) -> NSImage {
+    static func icon(for location: ExplorerLocation) -> NSImage {
         let image: NSImage?
         switch location {
         case .folder(let url): image = NSWorkspace.shared.icon(forFile: url.path)
@@ -308,6 +317,9 @@ final class ExplorerTabController: NSViewController {
         case .network: image = NSImage(systemSymbolName: "network", accessibilityDescription: nil)
         case .recycleBin: image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
         case .search: image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        case .remote(let remote):
+            let symbol = remote.parent == nil ? "server.rack" : "folder"
+            image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         }
         return image ?? NSImage()
     }
@@ -341,11 +353,10 @@ final class ExplorerTabController: NSViewController {
         case .search(let text, let scope):
             runSearch(text, in: scope)
         case .network:
-            let items = NetworkBrowser.shared.computers().map { computer in
-                FileItem(url: computer.url, name: computer.name, kind: .directory)
-            }
-            content.setItems(items)
+            content.setItems(networkItems())
             updateStatusBar()
+        case .remote(let remote):
+            loadRemote(remote)
         }
     }
 
@@ -456,6 +467,22 @@ final class ExplorerTabController: NSViewController {
         return await withCheckedContinuation { continuation in
             alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
         }
+    }
+}
+
+// MARK: - Renamed locations
+
+extension ExplorerTabController {
+    /// Swaps the current location for the same place under another name (a remote home
+    /// folder, once resolved) without loading it again.
+    func adopt(_ location: ExplorerLocation) {
+        history.replaceCurrent(with: location)
+        title = location.displayName
+        icon = Self.icon(for: location)
+        host?.tabDidChangeTitle(self)
+        rootViewController.navigationPane.select(location)
+        addressBar.update(location: location, history: history)
+        updateSearchField()
     }
 }
 

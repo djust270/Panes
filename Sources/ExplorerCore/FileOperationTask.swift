@@ -57,6 +57,7 @@ public final class FileOperationTask: @unchecked Sendable, Identifiable {
 
     /// Performs the request. Call once, off the main thread.
     public func run(handlers: FileOperationHandlers = FileOperationHandlers()) -> FileOperationResult {
+        // swiftlint:disable:previous cyclomatic_complexity
         precondition(!state.withLock { hasRun }, "A FileOperationTask can only run once")
         state.withLock { hasRun = true }
         self.handlers = handlers
@@ -82,6 +83,16 @@ public final class FileOperationTask: @unchecked Sendable, Identifiable {
                 runCreate(in: folder, name: name, directory: false)
             case .download(let urls):
                 try runDownload(urls)
+            case .remoteDownload(let paths, let folder):
+                try runRemoteDownload(paths, into: folder)
+            case .remoteUpload(let urls, let folder):
+                try runRemoteUpload(urls, into: folder)
+            case .remoteDelete(let paths):
+                try runRemoteDelete(paths)
+            case .remoteRename(let path, let name):
+                runRemoteRename(path, to: name)
+            case .remoteCreateFolder(let folder, let name):
+                runRemoteCreateFolder(in: folder, name: name)
             }
         } catch {
             result.wasCancelled = true

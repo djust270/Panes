@@ -171,7 +171,7 @@ final class ConflictWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func column(checkbox: NSButton, item: FileConflict.Item) -> NSView {
-        let icon = NSImageView(image: NSWorkspace.shared.icon(forFile: item.url.path))
+        let icon = NSImageView(image: FileIcons.icon(for: item.url, isDirectory: item.isDirectory))
         icon.widthAnchor.constraint(equalToConstant: 48).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 48).isActive = true
 

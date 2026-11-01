@@ -218,7 +218,7 @@ extension ContentViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .dateDeleted: return item.trashInfo?.dateDeleted.map { dateFormatter.string(from: $0) } ?? ""
         case .dateModified: return item.dateModified.map { dateFormatter.string(from: $0) } ?? ""
         case .dateCreated: return item.dateCreated.map { dateFormatter.string(from: $0) } ?? ""
-        case .type: return mode == .network ? "Computer" : item.typeDescription
+        case .type: return mode == .network ? Self.networkKind(of: item) : item.typeDescription
         case .size: return item.size.map { FileSizeFormat.string(for: $0) } ?? ""
         case .tags: return item.properties?.tagsText ?? ""
         case .dimensions: return item.properties?.dimensionsText ?? ""

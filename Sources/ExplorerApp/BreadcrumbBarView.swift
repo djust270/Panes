@@ -7,6 +7,8 @@ import ExplorerCore
 final class BreadcrumbBarView: NSView, StyleObserving {
     var onNavigate: ((ExplorerLocation) -> Void)?
     var onNetworkPath: ((NetworkPath) -> Void)?
+    /// An SSH address (`user@host:/path`, `sftp://…`) was typed.
+    var onRemotePath: ((RemotePath) -> Void)?
     /// Editing the path ended (Return or Escape); focus should go back to the files.
     var onEndEditing: (() -> Void)?
 
@@ -113,7 +115,7 @@ final class BreadcrumbBarView: NSView, StyleObserving {
     func beginEditing() {
         guard let location, !isEditing else { return }
         isEditing = true
-        pathField.stringValue = location.fileURL?.path ?? location.displayName
+        pathField.stringValue = location.editableAddress
         scrollView.isHidden = true
         pathField.isHidden = false
         window?.makeFirstResponder(pathField)
@@ -134,7 +136,13 @@ final class BreadcrumbBarView: NSView, StyleObserving {
         let path = (FileNaming.unquotedPath(input) as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            NSSound.beep()
+            // Local folders win: only then try reading it as an SSH address.
+            if let remote = RemotePath.parse(input) {
+                finishEditingUI()
+                onRemotePath?(remote)
+            } else {
+                NSSound.beep()
+            }
             return
         }
         finishEditingUI()

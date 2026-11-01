@@ -25,7 +25,7 @@ final class ThumbnailProvider {
 
     /// Whether `item` can have a content thumbnail (folders and packages use their icon).
     static func canThumbnail(_ item: FileItem) -> Bool {
-        item.kind == .file
+        item.kind == .file && !item.isRemote
     }
 
     /// The thumbnail if it's cached; otherwise starts generating it and calls `completion` on

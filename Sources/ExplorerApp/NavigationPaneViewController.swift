@@ -24,6 +24,7 @@ final class NavigationPaneViewController: NSViewController {
     private var quickAccessObserver: NSObjectProtocol?
     private var driveObserver: NSObjectProtocol?
     private var cloudObserver: NSObjectProtocol?
+    private var remoteObserver: NSObjectProtocol?
     /// The location last passed to `select(_:)`, to re-select after the pins change.
     private var selectedLocation: ExplorerLocation?
     /// Set while `select(_:)` is driving the selection programmatically, so
@@ -73,16 +74,31 @@ final class NavigationPaneViewController: NSViewController {
         quickAccessObserver = QuickAccess.observe { [weak self] in self?.reloadRoots() }
         driveObserver = DriveCenter.observe { [weak self] in self?.reloadDrives() }
         cloudObserver = CloudCenter.observe { [weak self] in self?.reloadRoots() }
+        remoteObserver = RemoteCenter.observe { [weak self] in self?.reloadServers() }
     }
 
     /// Stops following Quick access, drives and cloud folders. Called when the tab closes.
     func close() {
-        for observer in [quickAccessObserver, driveObserver, cloudObserver].compactMap({ $0 }) {
+        for observer in [quickAccessObserver, driveObserver, cloudObserver, remoteObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
         quickAccessObserver = nil
         driveObserver = nil
         cloudObserver = nil
+        remoteObserver = nil
+    }
+
+    /// Re-reads Network's SSH servers after one is saved or removed.
+    private func reloadServers() {
+        childrenCache[SidebarTree.networkID] = nil
+        let updated = Self.currentRoots()
+        if updated != roots {
+            roots = updated
+            outlineView.reloadData()
+        } else if let network = roots.first(where: { $0.id == SidebarTree.networkID }) {
+            outlineView.reloadItem(network, reloadChildren: true)
+        }
+        if let selectedLocation { select(selectedLocation) }
     }
 
     /// Re-reads This PC's volumes after a mount, unmount or drive-letter change.
@@ -94,7 +110,8 @@ final class NavigationPaneViewController: NSViewController {
     }
 
     private static func currentRoots() -> [SidebarItem] {
-        SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders, cloudRoots: CloudCenter.roots)
+        SidebarTree.roots(pinnedFolders: QuickAccess.store.pinnedFolders, cloudRoots: CloudCenter.roots,
+                          hasServers: !RemoteCenter.servers().isEmpty)
     }
 
     /// The root index of the first pin, and how many there are.
@@ -136,6 +153,15 @@ final class NavigationPaneViewController: NSViewController {
             }
         }
 
+        // Anywhere on an SSH server: that server's row.
+        if let host = location.remotePath?.host,
+           let network = roots.first(where: { $0.id == SidebarTree.networkID }), network.isExpandable,
+           let server = children(of: network).first(where: { $0.location.remotePath?.host.key == host.key }) {
+            outlineView.expandItem(network)
+            selectRow(for: server)
+            return
+        }
+
         outlineView.deselectAll(nil)
     }
 
@@ -150,6 +176,11 @@ final class NavigationPaneViewController: NSViewController {
 
     private func children(of item: SidebarItem) -> [SidebarItem] {
         if let cached = childrenCache[item.id] { return cached }
+        if item.id == SidebarTree.networkID {
+            let servers = SidebarTree.serverItems(RemoteCenter.servers().map { ($0.title, $0.location) })
+            childrenCache[item.id] = servers
+            return servers
+        }
         var names: [URL: String] = [:]
         for (volume, letter) in DriveCenter.volumes() {
             names[volume.url.standardizedFileURL] = DriveCenter.displayName(volume, letter: letter)
@@ -256,11 +287,12 @@ extension NavigationPaneViewController: NSOutlineViewDataSource {
         return SidebarTree.pinGap(nearest: target, firstPin: pins.first, pinCount: pins.count)
     }
 
-    /// Rows that accept drops: real folders (including volumes) and the Recycle Bin.
+    /// Rows that accept drops: real folders (including volumes), SSH servers (uploads to the
+    /// folder they open) and the Recycle Bin.
     private func dropLocation(for item: Any?) -> ExplorerLocation? {
         guard let location = (item as? SidebarItem)?.location else { return nil }
         switch location {
-        case .folder, .recycleBin: return location
+        case .folder, .recycleBin, .remote: return location
         default: return nil
         }
     }
@@ -359,6 +391,11 @@ extension NavigationPaneViewController: NSMenuDelegate {
             // No target: travels the responder chain to the tab.
             menu.addItem(withTitle: "Map network drive…", action: #selector(ExplorerTabController.mapNetworkDrive(_:)),
                          keyEquivalent: "")
+            menu.addItem(withTitle: "Connect to SSH Server…",
+                         action: #selector(ExplorerTabController.connectToSSHServer(_:)), keyEquivalent: "")
+        }
+        if let server = location.remotePath?.host {
+            addServerItems(to: menu, for: server)
         }
 
         guard let folder = location.fileURL else { return }
@@ -401,6 +438,30 @@ extension NavigationPaneViewController: NSMenuDelegate {
                 store.pin(folder)
             }
         }
+    }
+
+    /// Disconnect, and Remove connection for saved servers.
+    private func addServerItems(to menu: NSMenu, for server: RemoteHost) {
+        menu.addItem(.separator())
+        let disconnect = menu.addItem(withTitle: "Disconnect", action: #selector(disconnectServer(_:)),
+                                      keyEquivalent: "")
+        disconnect.target = self
+        disconnect.representedObject = server
+        guard RemoteCenter.store.connection(for: server) != nil else { return }
+        let remove = menu.addItem(withTitle: "Remove connection", action: #selector(removeServer(_:)),
+                                  keyEquivalent: "")
+        remove.target = self
+        remove.representedObject = server
+    }
+
+    @objc private func disconnectServer(_ sender: NSMenuItem) {
+        guard let host = sender.representedObject as? RemoteHost else { return }
+        RemoteCenter.disconnect(host)
+    }
+
+    @objc private func removeServer(_ sender: NSMenuItem) {
+        guard let host = sender.representedObject as? RemoteHost else { return }
+        RemoteCenter.remove(host)
     }
 
     @objc private func ejectVolume(_ sender: NSMenuItem) {

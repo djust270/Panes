@@ -17,6 +17,9 @@ final class AddressBarView: NSView, StyleObserving {
     var onNavigate: ((ExplorerLocation) -> Void)? {
         didSet { breadcrumbBar.onNavigate = onNavigate }
     }
+    var onRemotePath: ((RemotePath) -> Void)? {
+        didSet { breadcrumbBar.onRemotePath = onRemotePath }
+    }
     var onNetworkPath: ((NetworkPath) -> Void)? {
         didSet { breadcrumbBar.onNetworkPath = onNetworkPath }
     }

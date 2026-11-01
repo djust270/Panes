@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static func main() {
+        // Started by ssh as its SSH_ASKPASS helper: ask the running app, print the answer, exit.
+        if let socket = ProcessInfo.processInfo.environment[AskpassEnvironment.socket] {
+            exit(AskpassHelper.run(socket: socket))
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -34,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DriveCenter.start()
         DriveCenter.reconnectMappedDrives()
         CloudCenter.start()
+        RemoteCenter.start()
         SystemIntegration.start()
         // Launched to open a folder: that's the window, not the start location.
         if windowControllers.isEmpty { openWindow(at: Self.newTabLocation) }
@@ -94,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        RemoteCenter.shutdown()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

@@ -51,7 +51,7 @@ extension ExplorerTabController {
         case .search(_, let scope): return scope
         case .home: return FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         case .thisPC: return URL(fileURLWithPath: "/")
-        case .recycleBin, .network: return nil
+        case .recycleBin, .network, .remote: return nil
         }
     }
 

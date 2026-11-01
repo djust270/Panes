@@ -97,6 +97,11 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
         cell.onToggleCheckbox = { [weak self] _ in self?.toggleSelection(of: item.url) }
     }
 
+    /// What a Network item is: a computer found on the network, or an SSH server.
+    static func networkKind(of item: FileItem) -> String {
+        item.isRemote ? "SSH server" : "Computer"
+    }
+
     /// A folder path with the home folder shortened to "~", or named when it's the home folder
     /// itself (a lone "~" reads as a typo).
     static func displayPath(_ path: String) -> String {
@@ -121,9 +126,11 @@ extension ContentViewController: NSCollectionViewDataSource, NSCollectionViewDel
             return driveDetailText(volume, mode: viewMode)
         }
         if mode == .network {
-            let address = item.url.absoluteString
-            return viewMode == .content ? ItemDetailText(line2: address, right1: "Computer")
-                : ItemDetailText(line2: "Computer", line3: address)
+            let server = RemotePath(url: item.url)
+            let address = server?.addressString ?? item.url.absoluteString
+            let kind = Self.networkKind(of: item)
+            return viewMode == .content ? ItemDetailText(line2: address, right1: kind)
+                : ItemDetailText(line2: kind, line3: address)
         }
         if mode == .home {
             if viewMode == .tiles {

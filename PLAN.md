@@ -519,6 +519,57 @@ providers' APIs are out of scope.
 env-gated self-test for the Status column and menu items. By hand, per installed provider: browse 1,000+ online-only
 files in Large icons without downloads, Free up space / Keep, copy in and out, cancel mid-download.
 
+## Remote folders (SSH)
+Browse folders on any computer you can `ssh` to, and copy files in and out, like a mapped drive.
+
+**Approach:** the system's `/usr/bin/ssh`, so `~/.ssh/config`, keys, the agent, `ProxyJump` and `known_hosts` all work
+as in Terminal; no new dependency, no sshfs/macFUSE. One master connection per server (`ControlMaster`, sockets in
+`$TMPDIR/panes-ssh`, `ControlPersist=300`); the app speaks SFTP v3 itself over `ssh -s host sftp` channels through
+it (`SFTPClient`). `scp` can't list folders and has used SFTP underneath since OpenSSH 9.0, so this is the same
+protocol, with exact sizes, dates and types, error codes rather than text, and byte-exact progress.
+
+**Status: implemented** (stages 1–4), checked against a real sshd in an in-app self-test.
+- Entry points: the address bar (`user@host:/path`, `host:`, `sftp://user@host:port/path`, `ssh://`, `scp://`; a
+  local folder of the same name wins), Connect to SSH Server… (File menu, ⋯, Network's menus; Server, User name,
+  Port, Folder, "Remember this server under Network"), Network's page and the navigation pane (saved servers, then
+  `~/.ssh/config` hosts without wildcards, following `Include`). The breadcrumb reads Network › server › folders;
+  Up from `/` goes to Network.
+- Sign-in: ssh runs the app's own executable as `SSH_ASKPASS` (`SSH_ASKPASS_REQUIRE=force`); it hands the question to
+  the running app over a Unix socket with a per-launch token, and the app asks as a sheet on the window that wanted
+  to connect: unknown host key (Connect / Cancel), password ("incorrect, try again" the second time), key
+  passphrase, agent confirmation. Cancelling shows "Sign-in was cancelled" with Connect. A changed host key is
+  refused with ssh's advice (`ssh-keygen -R`). Passwords aren't saved; `UseKeychain` / `AddKeysToAgent` work for keys.
+- In a remote folder: open (downloads to `~/Library/Caches/<bundle>/Remote Files`, reused while size and date match,
+  then opens the copy; a one-time notice says edits stay in the copy), Open with, open in new tab/window, Copy then
+  Paste in a local folder (download), Paste or drop local files (upload, always a copy), Download to…, Upload files…,
+  drag out to Finder (file promises), Copy as path (`user@host:/path`), Disconnect, Filter, views and sorting.
+  Properties, Share, Compress, Terminal, Cut, New text document and search are off. No live updates: F5 refreshes.
+- Delete, Rename and New folder work on the server (`.remoteDelete`, `.remoteRename`, `.remoteCreateFolder`).
+  Delete is permanent after a confirmation, as Windows does for network folders: folders are emptied first, links
+  are deleted rather than followed, and a folder whose contents were partly skipped stays. Rename is in place (F2)
+  and can be undone; names may contain a colon; changing only the case goes through a temporary name, so it works on
+  case-insensitive servers. New folder makes "New folder", "New folder (2)"… and starts renaming it; it can't be
+  undone (undoing would have to delete whatever was put in it since).
+- Transfers run in the operation engine (`.remoteDownload`, `.remoteUpload`), with the progress window, pause,
+  cancel and Replace / Skip / Keep both. Files arrive under a temporary name (`.name.panes-part`,
+  `.name.panes-upload-…`) and are renamed into place, so a cancelled transfer leaves nothing behind. Dates and
+  permissions are kept. Downloads can be undone (moved to the Recycle Bin); uploads can't.
+- Hidden files follow Show hidden items (names starting with "."). Links are followed: a link to a folder is a
+  folder. Thumbnails, Quick Look previews and Spotlight properties are off for remote items; icons come from the type.
+
+**Later:** servers without an SFTP subsystem (some BusyBox/Dropbear) get "The server doesn't offer file transfer";
+a shell-based fallback could list with `sh` and copy with `cat`. Also: moving within a server, uploading a saved edit of an opened copy, Open in Terminal (`ssh -t`), passwords in the keychain, copying between
+two servers. ssh shortens key paths in its passphrase prompt to 100 characters, so very long key paths show cut off.
+
+**Tests:** `RemotePathTests` (address forms, IPv6, percent-encoding round trips, rejecting `-oProxyCommand=…` and
+`C:`), `SSHConfigTests`, `SSHCommandTests` (arguments, socket path length, classifying ssh's errors), `AskpassTests`
+(real OpenSSH prompts, token check), and `SFTPTests`, which run the real `/usr/libexec/sftp-server` over pipes:
+listing, links, errors, downloads and uploads with conflicts, cancelling mid-file; `SFTPEditTests` for delete
+(links, skipped contents), rename (undo, taken and invalid names, case only) and new folder. Against a real server:
+`EXPLORER_SSH_TESTS=1 [EXPLORER_SSH_HOST=host] [EXPLORER_SSH_CONFIG=file] scripts/test.sh` (sign-in, master reuse,
+a transfer round trip, reconnecting). `EXPLORER_SSH_CONFIG` also makes the app use that file instead of
+`~/.ssh/config`, e.g. for a private `sshd -f config` on a high port.
+
 ---
 
 ## Risks

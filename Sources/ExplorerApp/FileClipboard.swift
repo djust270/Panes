@@ -1,4 +1,5 @@
 import AppKit
+import ExplorerCore
 
 /// Cut/Copy/Paste of files through the general pasteboard, with Windows "cut" semantics:
 /// cut items stay in place (dimmed) until pasted, and are then moved.
@@ -12,6 +13,10 @@ final class FileClipboard {
 
     private static let cutMarker = NSPasteboard.PasteboardType(
         (Bundle.main.bundleIdentifier ?? "com.example.explorer") + ".cut"
+    )
+    /// Items copied in a folder on an SSH server, as JSON `[RemotePath]`.
+    private static let remoteItems = NSPasteboard.PasteboardType(
+        (Bundle.main.bundleIdentifier ?? "com.example.explorer") + ".remote-items"
     )
 
     private let pasteboard = NSPasteboard.general
@@ -45,6 +50,31 @@ final class FileClipboard {
 
     var canPaste: Bool {
         pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+    }
+
+    /// Copies items on an SSH server: Paste in a local folder downloads them. Other apps get
+    /// their addresses as text.
+    func writeRemote(_ paths: [RemotePath]) {
+        pasteboard.clearContents()
+        pasteboard.declareTypes([Self.remoteItems, .string], owner: nil)
+        if let data = try? JSONEncoder().encode(paths) {
+            pasteboard.setData(data, forType: Self.remoteItems)
+        }
+        pasteboard.setString(paths.map(\.addressString).joined(separator: "\n"), forType: .string)
+        cutURLs = []
+        lastChangeCount = pasteboard.changeCount
+        postChange()
+    }
+
+    /// Remote items copied in this app, if that's what the pasteboard holds.
+    func readRemote() -> [RemotePath]? {
+        guard let data = pasteboard.data(forType: Self.remoteItems),
+              let paths = try? JSONDecoder().decode([RemotePath].self, from: data), !paths.isEmpty else { return nil }
+        return paths
+    }
+
+    var canPasteRemote: Bool {
+        pasteboard.types?.contains(Self.remoteItems) ?? false
     }
 
     /// After a cut-and-paste the pasteboard is emptied, as on Windows: the originals are gone.

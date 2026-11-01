@@ -267,7 +267,13 @@ extension FileOperationTask {
         destination: URL,
         existing: FileStatus
     ) throws -> ConflictResolution {
-        let canReplace = !node.isDirectory && existing.type != .directory
+        try resolveConflict(node.status.conflictItem(node.source), existing.conflictItem(destination))
+    }
+
+    /// Asks how to resolve `source` meeting `destination`, unless an earlier answer applies
+    /// to the rest. Throws if the user cancels.
+    func resolveConflict(_ source: FileConflict.Item, _ destination: FileConflict.Item) throws -> ConflictResolution {
+        let canReplace = !source.isDirectory && !destination.isDirectory
         remainingConflicts = max(0, remainingConflicts - 1)
 
         var resolution: ConflictResolution
@@ -275,8 +281,8 @@ extension FileOperationTask {
             resolution = conflictPolicy
         } else {
             let conflict = FileConflict(
-                source: node.status.conflictItem(node.source),
-                destination: existing.conflictItem(destination),
+                source: source,
+                destination: destination,
                 canReplace: canReplace,
                 remainingCount: remainingConflicts
             )

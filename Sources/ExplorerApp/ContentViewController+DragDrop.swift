@@ -16,7 +16,13 @@ extension ContentViewController {
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         guard listsFiles, !isRenaming, let item = listContent.item(atRow: row) else { return nil }
-        return item.url as NSURL
+        return pasteboardWriter(for: item)
+    }
+
+    /// Local items drag as file URLs; remote ones as promises, downloaded where dropped.
+    private func pasteboardWriter(for item: FileItem) -> NSPasteboardWriting? {
+        guard item.isRemote else { return item.url as NSURL }
+        return RemoteFilePromise(item: item, window: view.window)
     }
 
     func tableView(
@@ -89,8 +95,8 @@ extension ContentViewController {
 
     /// The folder under the drop, or `nil` for the folder being shown.
     private func dropTarget(_ item: FileItem?) -> ExplorerLocation? {
-        guard mode == .folder, let item, item.isFolder else { return nil }
-        return .folder(item.url)
+        guard mode == .folder || mode == .remote, let item else { return nil }
+        return location(for: item)
     }
 
     // MARK: Collection view
@@ -117,7 +123,7 @@ extension ContentViewController {
     ) -> NSPasteboardWriting? {
         guard listsFiles, !isRenaming,
               let item = listContent.item(section: indexPath.section, index: indexPath.item) else { return nil }
-        return item.url as NSURL
+        return pasteboardWriter(for: item)
     }
 
     func collectionView(

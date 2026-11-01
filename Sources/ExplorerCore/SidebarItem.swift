@@ -21,7 +21,8 @@ public struct SidebarItem: Sendable, Hashable, Identifiable {
 }
 
 /// The navigation pane's two-level tree: root items (Home, cloud folders, the Quick access
-/// pins, This PC, Network, Recycle Bin), and — only under This PC — mounted volumes.
+/// pins, This PC, Network, Recycle Bin); mounted volumes under This PC, and SSH servers
+/// under Network.
 public enum SidebarTree {
     private struct WellKnownFolder {
         let title: String
@@ -39,6 +40,9 @@ public enum SidebarTree {
     ]
 
     public static let thisPCID = "this-pc"
+    public static let networkID = "network"
+    /// Prefix of the IDs of SSH servers' rows.
+    public static let serverIDPrefix = "ssh:"
     /// Prefix of the IDs of cloud folders' rows.
     public static let cloudIDPrefix = "cloud:"
     /// Prefix of the IDs of pinned folders' rows.
@@ -69,7 +73,12 @@ public enum SidebarTree {
 
     /// Home, cloud folders (as Windows 11 puts OneDrive under Home), the pinned folders (by
     /// default the six well-known ones), This PC, Network, Recycle Bin — in that order.
-    public static func roots(pinnedFolders: [URL]? = nil, cloudRoots: [CloudRoot] = []) -> [SidebarItem] {
+    /// Network expands only when `hasServers`.
+    public static func roots(
+        pinnedFolders: [URL]? = nil,
+        cloudRoots: [CloudRoot] = [],
+        hasServers: Bool = false
+    ) -> [SidebarItem] {
         var items = [SidebarItem(id: "home", title: "Home", symbolName: "house", location: .home)]
 
         for cloud in cloudRoots {
@@ -98,7 +107,8 @@ public enum SidebarTree {
             location: .thisPC,
             isExpandable: true
         ))
-        items.append(SidebarItem(id: "network", title: "Network", symbolName: "network", location: .network))
+        items.append(SidebarItem(id: networkID, title: "Network", symbolName: "network", location: .network,
+                                 isExpandable: hasServers))
         items.append(SidebarItem(id: "recycle-bin", title: "Recycle Bin", symbolName: "trash", location: .recycleBin))
         return items
     }
@@ -123,6 +133,18 @@ public enum SidebarTree {
     /// The gap among the pins nearest to the gap before root index `target`.
     public static func pinGap(nearest target: Int, firstPin: Int, pinCount: Int) -> Int {
         min(max(target, firstPin), firstPin + pinCount)
+    }
+
+    /// Network's children: SSH servers, as `(title, folder to open)`.
+    public static func serverItems(_ servers: [(title: String, location: RemotePath)]) -> [SidebarItem] {
+        servers.map { server in
+            SidebarItem(
+                id: serverIDPrefix + server.location.host.key,
+                title: server.title,
+                symbolName: "server.rack",
+                location: .remote(server.location)
+            )
+        }
     }
 
     /// Children of an expandable root: This PC's volumes; `[]` for everything else.

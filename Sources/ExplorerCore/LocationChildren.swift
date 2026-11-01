@@ -17,6 +17,9 @@ public enum LocationChildren {
             return CloudStorage.roots().map { .folder($0.url) }
         case .network, .recycleBin, .search:
             return []
+        case .remote:
+            // Listing needs the network; this runs on the main thread for a menu.
+            return []
         }
     }
 

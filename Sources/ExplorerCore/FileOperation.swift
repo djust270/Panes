@@ -21,6 +21,16 @@ public enum FileOperationRequest: Sendable, Hashable {
     case createFile(in: URL, name: String)
     /// Downloads the online-only files among items in cloud folders, and in folders among them.
     case download([URL])
+    /// Copies items from an SSH server into a local folder.
+    case remoteDownload([RemotePath], into: URL)
+    /// Copies local items into a folder on an SSH server.
+    case remoteUpload([URL], into: RemotePath)
+    /// Deletes items on an SSH server, folders with their contents. Cannot be undone.
+    case remoteDelete([RemotePath])
+    /// Renames an item on an SSH server.
+    case remoteRename(RemotePath, to: String)
+    /// Creates a folder named `name`, or "name (2)" etc., in a folder on an SSH server.
+    case remoteCreateFolder(in: RemotePath, name: String)
 }
 
 /// One item's move to an exact destination path.
@@ -48,21 +58,40 @@ extension FileOperationRequest {
         case .rename: return "Rename"
         case .createFolder: return "New Folder"
         case .createFile: return "New File"
-        case .download: return "Download"
+        case .download, .remoteDownload: return "Download"
+        case .remoteUpload: return "Upload"
+        case .remoteDelete: return "Delete"
+        case .remoteRename: return "Rename"
+        case .remoteCreateFolder: return "New Folder"
         }
     }
 
     /// The items the request acts on, before it runs.
     public var sourceURLs: [URL] {
         switch self {
-        case .copy(let urls, _), .move(let urls, _), .trash(let urls), .delete(let urls), .download(let urls):
+        case .copy(let urls, _), .move(let urls, _), .trash(let urls), .delete(let urls), .download(let urls),
+             .remoteUpload(let urls, _):
             return urls
+        case .remoteDownload(let paths, _), .remoteDelete(let paths):
+            return paths.map(\.url)
+        case .remoteRename(let path, _):
+            return [path.url]
         case .relocate(let relocations):
             return relocations.map(\.source)
         case .rename(let url, _):
             return [url]
-        case .createFolder, .createFile:
+        case .createFolder, .createFile, .remoteCreateFolder:
             return []
+        }
+    }
+
+    /// The SSH server the request works on, if any; it must be connected first.
+    public var remoteHost: RemoteHost? {
+        switch self {
+        case .remoteDownload(let paths, _), .remoteDelete(let paths): return paths.first?.host
+        case .remoteUpload(_, let folder), .remoteCreateFolder(let folder, _): return folder.host
+        case .remoteRename(let path, _): return path.host
+        default: return nil
         }
     }
 }
@@ -260,6 +289,10 @@ public struct FileOperationEnvironment: Sendable {
     var stopDownloading: @Sendable (URL) -> Void = { try? CloudSync.freeUpSpace($0) }
     /// Whether an item can't be moved to the Trash for being online-only (`CloudSync`).
     var hasOnlineOnlyContents: @Sendable (URL) -> Bool = { CloudSync.hasOnlineOnlyContents($0) }
+    /// A new SFTP channel to a host, for remote transfers. The host must already be connected.
+    public var openSFTP: @Sendable (RemoteHost) throws -> SFTPClient = {
+        try SSHConnectionPool.shared.openTransferClient($0)
+    }
 
     public init(trash: @escaping @Sendable (URL) throws -> URL) {
         self.trash = trash

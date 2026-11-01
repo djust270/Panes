@@ -36,6 +36,8 @@ final class ContentViewController: NSViewController {
         case search
         /// Network: computers, opened by connecting to them. No file operations.
         case network
+        /// A folder on an SSH server: browse, open, copy in and out; nothing else.
+        case remote
     }
 
     /// Network's computers aren't files: no drags, drops or thumbnails.
@@ -320,7 +322,7 @@ final class ContentViewController: NSViewController {
     }
 
     private var canBuildInBackground: Bool {
-        items.count >= Self.backgroundBuildThreshold && (mode == .folder || mode == .recycleBin)
+        items.count >= Self.backgroundBuildThreshold && [.folder, .recycleBin, .remote].contains(mode)
             && !settings.needsProperties
     }
 

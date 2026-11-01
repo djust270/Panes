@@ -144,14 +144,14 @@ extension ExplorerTabController {
         case #selector(filterByKind(_:)):
             let kind = (menuItem.representedObject as? String).flatMap(FileKind.init(rawValue:))
             menuItem.state = kind.map(content.kindFilter.contains) == true ? .on : .off
-            return kind == nil ? !content.kindFilter.isEmpty : currentFolder != nil || inSearchResults
+            return kind == nil ? !content.kindFilter.isEmpty : currentFolder != nil || inSearchResults || inRemote
         case #selector(toggleItemCheckboxes(_:)):
             menuItem.state = content.showsCheckboxes ? .on : .off
             return true
         case #selector(selectNone(_:)), #selector(invertSelection(_:)):
             return !content.allItems.isEmpty
         case #selector(applyViewToAllFolders(_:)):
-            return currentFolder != nil
+            return currentFolder != nil || inRemote
         case #selector(resetAllFolders(_:)):
             return true
         default:

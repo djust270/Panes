@@ -70,6 +70,8 @@ extension ExplorerLocation {
     public var viewSettingsKey: String? {
         switch self {
         case .folder(let url): return "folder:" + url.standardizedFileURL.path
+        // "folder:" so "Apply to all folders" and the size limit cover remote folders too.
+        case .remote(let remote): return "folder:" + remote.url.absoluteString
         case .recycleBin: return "recycle-bin"
         case .thisPC: return "this-pc"
         case .search: return "search"

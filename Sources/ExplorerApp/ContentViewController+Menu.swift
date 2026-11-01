@@ -95,7 +95,42 @@ extension ContentViewController: NSMenuDelegate {
             menu.add("Restore all items", #selector(ExplorerTabController.restoreAll(_:)))
         case (.volumes, _), (.network, _):
             addDriveCommands(to: menu, onItem: onItem, volumes: selection.compactMap(\.volume))
+        case (.remote, _):
+            addRemoteCommands(to: menu, onItem: onItem, hasFolders: hasFolders)
         }
+    }
+
+    /// A remote item's menu: open it (a copy, for files), copy it to paste on this Mac, or
+    /// download it somewhere. A remote folder's background: paste or upload into it.
+    private func addRemoteCommands(to menu: NSMenu, onItem: Bool, hasFolders: Bool) {
+        guard onItem else {
+            addViewItems(to: menu)
+            menu.add("Paste", #selector(NSText.paste(_:)), command: .paste)
+            menu.add("Upload files…", #selector(ExplorerTabController.uploadFiles(_:)), modifiers: [])
+            menu.addItem(.separator())
+            menu.add("New folder", #selector(ExplorerTabController.newFolder(_:)), command: .newFolder)
+            menu.addItem(.separator())
+            menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
+            menu.add("Disconnect", #selector(ExplorerTabController.disconnectServer(_:)), modifiers: [])
+            return
+        }
+        let files = selectedItems.filter { !$0.isFolder }
+        menu.add("Open", #selector(ExplorerTabController.openSelection(_:)), command: .open)
+        if hasFolders {
+            menu.add("Open in new tab", #selector(ExplorerTabController.openInNewTab(_:)), modifiers: [])
+            menu.add("Open in new window", #selector(ExplorerTabController.openInNewWindow(_:)), modifiers: [])
+        }
+        if !files.isEmpty {
+            menu.addItem(openWithItem(for: files.map(\.url)))
+        }
+        menu.addItem(.separator())
+        menu.add("Copy", #selector(NSText.copy(_:)), command: .copy)
+        menu.add("Download to…", #selector(ExplorerTabController.downloadSelection(_:)), modifiers: [])
+        menu.addItem(.separator())
+        menu.add("Delete", #selector(ExplorerTabController.delete(_:)), command: .delete)
+        menu.add("Rename", #selector(ExplorerTabController.renameSelection(_:)), command: .rename)
+        menu.addItem(.separator())
+        menu.add("Copy as path", #selector(ExplorerTabController.copyAsPath(_:)), command: .copyAsPath)
     }
 
     /// This PC's and Network's menus: Open, Eject or Disconnect, Map network drive, Properties.
@@ -115,7 +150,17 @@ extension ContentViewController: NSMenuDelegate {
             menu.add(network ? "Disconnect" : "Eject", #selector(ExplorerTabController.ejectSelection(_:)),
                      modifiers: [])
         }
+        if mode == .network, onItem, selectedItems.contains(where: \.isRemote) {
+            menu.add("Disconnect", #selector(ExplorerTabController.disconnectServer(_:)), modifiers: [])
+            let saved = selectedItems.compactMap { RemotePath(url: $0.url) }
+                .contains { RemoteCenter.store.connection(for: $0.host) != nil }
+            if saved {
+                menu.add("Remove connection", #selector(ExplorerTabController.forgetServer(_:)), modifiers: [])
+            }
+            menu.addItem(.separator())
+        }
         menu.add("Map network drive…", #selector(ExplorerTabController.mapNetworkDrive(_:)), modifiers: [])
+        menu.add("Connect to SSH Server…", #selector(ExplorerTabController.connectToSSHServer(_:)), modifiers: [])
         if mode == .volumes, onItem {
             menu.addItem(.separator())
             menu.add("Properties", #selector(ExplorerTabController.showProperties(_:)), command: .properties)

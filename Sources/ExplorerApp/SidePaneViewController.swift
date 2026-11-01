@@ -102,9 +102,13 @@ private final class PreviewPaneView: NSView {
     }
 
     func show(_ item: FileItem?) {
-        let url = item.flatMap { $0.kind == .file || $0.kind == .package ? $0.url : nil }
-        guard url != shownURL else { return }
+        let isRemote = item?.isRemote == true
+        let url = item.flatMap { !isRemote && ($0.kind == .file || $0.kind == .package) ? $0.url : nil }
+        guard url != shownURL || isRemote else { return }
         shownURL = url
+        message.stringValue = isRemote && item?.isFolder == false
+            ? "Preview isn’t available for files on SSH servers."
+            : "Select a file to preview."
         message.isHidden = url != nil
         quickLook?.isHidden = url == nil
         quickLook?.previewItem = url.map { $0 as NSURL }
@@ -172,7 +176,7 @@ private final class DetailsPaneView: NSView {
 
         title.stringValue = item.displayName(showingExtensions: AppSettings.showsFileExtensions)
         subtitle.stringValue = item.typeDescription
-        imageView.image = NSWorkspace.shared.icon(forFile: item.url.path)
+        imageView.image = FileIcons.icon(for: item)
         let scale = window?.backingScaleFactor ?? 2
         let thumbnail = ThumbnailProvider.shared.thumbnail(for: item, size: 160, scale: scale) { [weak self] image in
             guard self?.shownItem?.url == item.url else { return }
