@@ -10,7 +10,7 @@
 #   CONFIG         debug | release                 (default: release)
 #   SIGN_IDENTITY  codesign identity; "-" = ad-hoc (default: -)
 #                  e.g. "Developer ID Application: Your Name (TEAMID)" for distribution
-#   REPO_URL       GitHub repository, for issues   (default: https://github.com/djust270/osx-explorer)
+#   REPO_URL       GitHub repository, for issues   (default: https://github.com/djust270/Panes)
 #   SU_FEED_URL    Sparkle appcast URL             (default: appcast.xml on the repository's main branch)
 #   SU_PUBLIC_KEY  Sparkle EdDSA public key        (default: contents of scripts/sparkle-public-key.txt)
 #                  Updates are off in builds without a feed URL or key.
@@ -23,8 +23,8 @@ VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 CONFIG="${CONFIG:-release}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-REPO_URL="${REPO_URL:-https://github.com/djust270/osx-explorer}"
-SU_FEED_URL="${SU_FEED_URL:-https://raw.githubusercontent.com/djust270/osx-explorer/main/appcast.xml}"
+REPO_URL="${REPO_URL:-https://github.com/djust270/Panes}"
+SU_FEED_URL="${SU_FEED_URL:-https://raw.githubusercontent.com/djust270/Panes/main/appcast.xml}"
 SU_PUBLIC_KEY="${SU_PUBLIC_KEY:-$(cat scripts/sparkle-public-key.txt 2>/dev/null || true)}"
 
 swift build -c "$CONFIG" --product ExplorerApp --disable-keychain

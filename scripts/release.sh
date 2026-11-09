@@ -22,7 +22,7 @@ if [[ $# -ne 2 ]]; then
 fi
 export VERSION="$1" BUILD_NUMBER="$2"
 export APP_NAME="${APP_NAME:-Panes}"
-REPO="${REPO:-djust270/osx-explorer}"
+REPO="${REPO:-djust270/Panes}"
 DRY_RUN="${DRY_RUN:-0}"
 PUBLISH="${PUBLISH:-0}"
 tag="v$VERSION"
@@ -38,6 +38,10 @@ elif [[ "${SIGN_IDENTITY:--}" == "-" ]]; then
 fi
 if [[ "$PUBLISH" == 1 && -n "$(git status --porcelain)" ]]; then
     echo "error: commit your changes first; PUBLISH commits appcast.xml on its own" >&2
+    exit 1
+fi
+if [[ "$PUBLISH" == 1 && "$(git branch --show-current)" != main ]]; then
+    echo "error: publish from main; the app reads appcast.xml from there" >&2
     exit 1
 fi
 
