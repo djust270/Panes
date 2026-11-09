@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Panes</title>
+    <item>
+      <title>Version 0.1.0</title>
+      <pubDate>Mon, 09 Nov 2026 17:04:42 -0500</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/djust270/Panes/releases/tag/v0.1.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/djust270/Panes/releases/download/v0.1.0/Panes-0.1.0.dmg" sparkle:edSignature="t8ZPS6Vu+fRNfgwaQcAX9YRzRSDdfudC+yVlsT3FYyUUavIXcwPIR7sI+oAFwv5wA/hTKQdTvhuT3ctLOsAKDw==" length="3496431" type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>
