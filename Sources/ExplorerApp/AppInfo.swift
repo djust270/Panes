@@ -23,7 +23,7 @@ enum AppInfo {
     /// Set by scripts/bundle.sh (`REPO_URL`).
     static var repositoryURL: URL {
         (Bundle.main.object(forInfoDictionaryKey: "ExplorerRepositoryURL") as? String).flatMap(URL.init(string:))
-            ?? URL(string: "https://github.com/djust270/osx-explorer")!
+            ?? URL(string: "https://github.com/djust270/Panes")!
     }
 
     /// GitHub's "New issue" page, prefilled. GitHub refuses very long URLs, so `body` is
